@@ -6,7 +6,9 @@ agents abstain instead of being called. That covers the routing and the parts of
 the pipeline that must never depend on a model -- and it costs nothing to run in
 CI.
 """
-from django.test import TestCase, override_settings
+import json
+
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from carmed import AnswerStatus, Query, Urgency, Vehicle, run
@@ -176,6 +178,94 @@ class SummaryPersistenceTests(TestCase):
         self.assertEqual(trace["lookups"], answer.trace.lookups)
         self.assertEqual(trace["notes"], answer.trace.notes)
         self.assertEqual(trace["llm_calls"], answer.trace.llm_calls)
+
+
+@override_settings(OPENROUTER_API_KEY="")
+class StreamingTests(TransactionTestCase):
+    """The streamed run has to be the *same* run, not a second implementation.
+
+    TransactionTestCase rather than TestCase because stream_run does the graph
+    work on a worker thread, which gets its own DB connection and so cannot see
+    data held open in another connection's uncommitted transaction.
+    """
+
+    def setUp(self):
+        seed_camry_brake_case()
+        agentic.get_chat_model.cache_clear()
+        self.addCleanup(agentic.get_chat_model.cache_clear)
+        self.query = Query(
+            text=BRAKES, vehicle=Vehicle(make="Toyota", model="Camry", year=2014)
+        )
+
+    def collect(self, query=None):
+        return list(agentic.stream_run(query or self.query))
+
+    def test_streaming_matches_the_plain_run(self):
+        """_assemble_answer duplicates the tail of carmed.graph.run. This is what
+        catches it drifting."""
+        streamed = self.collect()[-1]["answer"]
+        direct = agentic.run_query(self.query).model_dump(mode="json")
+
+        # The trace notes carry similarity figures that are stable, but compare
+        # the decision-shaped fields explicitly so a mismatch names itself.
+        for field in ("status", "causes", "urgency", "from_cache", "dropped_refs", "intent"):
+            self.assertEqual(streamed[field], direct[field], field)
+        self.assertEqual(streamed["trace"]["steps"], direct["trace"]["steps"])
+        self.assertEqual(streamed["trace"]["llm_calls"], direct["trace"]["llm_calls"])
+
+    def test_events_arrive_in_pipeline_order(self):
+        events = self.collect()
+        steps = [e["name"] for e in events if e["type"] == "step"]
+        self.assertEqual(steps, ["vehicle", "route", "gate", "diagnose", "parts", "shops", "finalize"])
+        self.assertEqual(events[-1]["type"], "done")
+
+    def test_the_kb_gate_result_is_visible_as_an_event(self):
+        """The UI keys its cache HIT / MISS badge off this."""
+        notes = [e["text"] for e in self.collect() if e["type"] == "note"]
+        self.assertTrue(any(n.startswith("cache HIT") for n in notes), notes)
+
+    def test_lookups_report_their_result_counts(self):
+        lookups = {
+            e["name"]: e["count"] for e in self.collect() if e["type"] == "lookup"
+        }
+        self.assertEqual(lookups["case_store.find_similar"], 1)
+        self.assertEqual(lookups["research.search_shops"], 0)
+
+    def test_the_endpoint_streams_and_persists(self):
+        url = reverse("diagnostic-run-stream", args=[self.request_pk()])
+        response = self.client.post(url)
+        self.assertEqual(response["Content-Type"], "text/event-stream")
+
+        events = [
+            json.loads(chunk.decode().removeprefix("data: ").strip())
+            for chunk in response.streaming_content
+            if chunk.strip()
+        ]
+        kinds = [e["type"] for e in events]
+        self.assertIn("step", kinds)
+        self.assertIn("done", kinds)
+        self.assertEqual(kinds[-1], "saved")
+
+        request = DiagnosticRequest.objects.get(pk=self.request_pk())
+        self.assertEqual(request.status, DiagnosticStatus.COMPLETE)
+        self.assertTrue(request.summary["causes"])
+
+    def test_an_empty_symptom_is_refused_before_anything_is_spent(self):
+        """Running the graph on an empty description costs two model calls to
+        ask what the car is, and hands the diagnostician a prompt reading
+        "Problem (xx):" -- xx being carmed's unknown-language tag."""
+        blank = DiagnosticRequest.objects.create(car_make="Toyota", symptom_text="   ")
+        response = self.client.post(reverse("diagnostic-run-stream", args=[blank.pk]))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Describe the problem", response.json()["detail"])
+
+    def request_pk(self):
+        if not hasattr(self, "_pk"):
+            self._pk = DiagnosticRequest.objects.create(
+                car_make="Toyota", car_model="Camry", car_year=2014, symptom_text=BRAKES
+            ).pk
+        return self._pk
 
 
 @override_settings(OPENROUTER_API_KEY="")

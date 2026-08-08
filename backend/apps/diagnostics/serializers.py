@@ -2,7 +2,13 @@ from rest_framework import serializers
 
 from apps.cases.serializers import CaseRecordSerializer
 
-from .models import DiagnosticCaseMatch, DiagnosticImage, DiagnosticMessage, DiagnosticRequest
+from .models import (
+    DiagnosticCaseMatch,
+    DiagnosticImage,
+    DiagnosticMessage,
+    DiagnosticRequest,
+    DiagnosticRun,
+)
 
 
 class DiagnosticImageSerializer(serializers.ModelSerializer):
@@ -17,6 +23,13 @@ class DiagnosticMessageSerializer(serializers.ModelSerializer):
         model = DiagnosticMessage
         fields = ["id", "request", "role", "content", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+class DiagnosticRunSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DiagnosticRun
+        fields = ["id", "answer", "created_at"]
+        read_only_fields = fields
 
 
 class DiagnosticCaseMatchSerializer(serializers.ModelSerializer):
@@ -44,7 +57,7 @@ class DiagnoseInputSerializer(serializers.Serializer):
 
 class DiagnosticRequestSerializer(serializers.ModelSerializer):
     # Write-only and not a model field: it seeds the first chat message on
-    # create (see DiagnosticRequestViewSet._create_initial_reply). The
+    # create (see DiagnosticRequestViewSet._record_initial_turn). The
     # request's actual persisted state of "what's wrong" is symptom_text,
     # which starts as this text and gets rewritten every turn after.
     raw_text = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
@@ -52,6 +65,7 @@ class DiagnosticRequestSerializer(serializers.ModelSerializer):
     images = DiagnosticImageSerializer(many=True, read_only=True)
     messages = DiagnosticMessageSerializer(many=True, read_only=True)
     case_matches = DiagnosticCaseMatchSerializer(many=True, read_only=True)
+    runs = DiagnosticRunSerializer(many=True, read_only=True)
 
     class Meta:
         model = DiagnosticRequest
@@ -67,6 +81,8 @@ class DiagnosticRequestSerializer(serializers.ModelSerializer):
             "symptom_text",
             "status",
             "summary",
+            "trace",
+            "runs",
             "images",
             "messages",
             "case_matches",
@@ -78,6 +94,8 @@ class DiagnosticRequestSerializer(serializers.ModelSerializer):
             "symptom_text",
             "status",
             "summary",
+            "trace",
+            "runs",
             "images",
             "messages",
             "case_matches",

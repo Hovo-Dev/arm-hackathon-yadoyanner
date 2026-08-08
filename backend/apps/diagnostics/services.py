@@ -12,42 +12,6 @@ from .models import DiagnosticCaseMatch
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT_INTRO = (
-    "You are a car diagnostic assistant. Be concise and ask focused "
-    "follow-up questions when you need more information."
-)
-
-
-def system_prompt(diagnostic_request):
-    parts = [SYSTEM_PROMPT_INTRO]
-
-    vehicle = " ".join(
-        filter(
-            None,
-            [str(diagnostic_request.car_year or ""), diagnostic_request.car_make, diagnostic_request.car_model],
-        )
-    ).strip()
-    if vehicle:
-        parts.append(f"Vehicle: {vehicle}.")
-
-    matches = list(diagnostic_request.case_matches.select_related("case")[:3])
-    if matches:
-        known_fixes = "; ".join(f"{m.case.symptom_text} -> {m.case.confirmed_fix}" for m in matches)
-        parts.append(f"Similar past cases from the knowledge base: {known_fixes}")
-
-    return " ".join(parts)
-
-
-def build_context(diagnostic_request):
-    """Shared by the initial reply (generated right after the request is
-    created) and every follow-up turn on the streaming endpoint, so both
-    see the same system prompt and history-window logic."""
-    history = reversed(list(diagnostic_request.messages.recent(settings.DIAGNOSTIC_CHAT_HISTORY_LIMIT)))
-    return [{"role": "system", "content": system_prompt(diagnostic_request)}] + [
-        {"role": message.role, "content": message.content} for message in history
-    ]
-
-
 def _conversation_transcript(diagnostic_request):
     messages = diagnostic_request.messages.order_by("created_at")
     return "\n".join(f"{message.role}: {message.content}" for message in messages)

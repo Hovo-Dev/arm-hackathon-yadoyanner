@@ -35,8 +35,40 @@ class DiagnosticRequest(models.Model):
     status = models.CharField(max_length=20, choices=DiagnosticStatus.choices, default=DiagnosticStatus.PENDING)
     summary = models.JSONField(null=True, blank=True)
 
+    trace = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "The pipeline events from the last run -- the `step`/`llm`/`lookup`/`note` stream "
+            "the UI replays to show which agents ran and what they found. Persisted because "
+            "the SSE feed is live-only: without this the pipeline view would be blank for "
+            "every request except the one currently being streamed."
+        ),
+    )
+
     def __str__(self):
         return f"Request #{self.pk} ({self.car_make} {self.car_model})".strip()
+
+
+class DiagnosticRun(models.Model):
+    """One completed pass of the agentic graph, kept as a row so the answers
+    accumulate down the conversation instead of overwriting each other.
+
+    DiagnosticRequest.summary still holds the latest answer -- it is what the
+    status logic and the `finalize` endpoint read. This is the history behind
+    it: every turn re-runs the graph, and the answer to "does it only happen
+    when cold?" is a different answer, not a correction of the previous one."""
+
+    request = models.ForeignKey(DiagnosticRequest, on_delete=models.CASCADE, related_name="runs")
+    answer = models.JSONField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"run for request #{self.request_id} at {self.created_at:%Y-%m-%d %H:%M}"
 
 
 class DiagnosticCaseMatch(models.Model):

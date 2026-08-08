@@ -16,18 +16,12 @@ def _get_client():
     return OpenAI(api_key=settings.OPENROUTER_API_KEY, base_url=settings.OPENROUTER_BASE_URL)
 
 
-def stream_reply(messages):
-    """messages: list of {"role", "content"} dicts, oldest first.
-    Yields text deltas as they arrive from the model."""
-    stream = _get_client().chat.completions.create(
-        model=settings.OPENROUTER_MODEL,
-        messages=messages,
-        stream=True,
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield delta
+# There is deliberately no free-text `stream_reply` here any more. The
+# assistant's side of the conversation comes from the agentic run alone, so
+# that every reply carries an urgency verdict and traceable evidence. A plain
+# chat completion over the transcript could not, and answered confidently from
+# nothing -- given the input "miedrmi" it invented a cylinder, a fault code and
+# a manufacturer, while the graph correctly asked for clarification.
 
 
 def complete(messages) -> str:

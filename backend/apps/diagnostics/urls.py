@@ -4,9 +4,10 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     DiagnoseView,
     DiagnosticImageViewSet,
-    DiagnosticMessageStreamView,
     DiagnosticMessageViewSet,
     DiagnosticRequestViewSet,
+    DiagnosticRunStreamView,
+    DiagnosticTurnView,
 )
 
 router = DefaultRouter()
@@ -17,9 +18,14 @@ router.register("diagnostic-messages", DiagnosticMessageViewSet, basename="diagn
 urlpatterns = [
     path("diagnose/", DiagnoseView.as_view(), name="diagnose"),
     path(
-        "diagnostics/<int:request_id>/messages/stream/",
-        DiagnosticMessageStreamView.as_view(),
-        name="diagnostic-message-stream",
+        "diagnostics/<int:request_id>/run/stream/",
+        DiagnosticRunStreamView.as_view(),
+        name="diagnostic-run-stream",
+    ),
+    path(
+        "diagnostics/<int:request_id>/turns/",
+        DiagnosticTurnView.as_view(),
+        name="diagnostic-turn",
     ),
     path("", include(router.urls)),
 ]
