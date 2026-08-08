@@ -1,5 +1,12 @@
 .env
+*.env
 .venv/
 __pycache__/
 *.pyc
 .idea/
+.DS_Store
+
+# Django
+backend/media/
+backend/staticfiles/
+db.sqlite3

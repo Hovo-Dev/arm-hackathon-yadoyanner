@@ -59,7 +59,12 @@ def normalize(text: str) -> str:
 SYMPTOM_KEYWORDS: dict[SystemArea, tuple[str, ...]] = {
     SystemArea.BRAKES: (
         "արգելակ", "կալոդկա", "тормоз", "колодк", "суппорт", "абс",
-        "brake", "pad", "caliper", "rotor", "abs", "argelak", "tormoz",
+        # "braking" is listed separately because "brake" is not a substring of
+        # it. Without this the safety floor silently fails to fire on the most
+        # common English phrasing of a brake fault ("noise when braking"), which
+        # is the one miss that actually hurts someone. The Russian and Armenian
+        # entries are already stems and need no equivalent.
+        "brake", "braking", "pad", "caliper", "rotor", "abs", "argelak", "tormoz",
     ),
     SystemArea.STEERING: (
         "ղեկ", "руль", "рулев", "рейк", "гур",
