@@ -177,7 +177,18 @@ def _part_likelihood(title: str, terms: list[str]) -> float:
 class ArmenianResearch:
     """`ResearchTool` over Armenian and regional sources."""
 
+    #: Firecrawl calls allowed for the whole request, across every call the
+    #: graph makes. The parts explorer's prompt says "two searches maximum"
+    #: and it made fifteen on one run -- clutch master cylinder, slave
+    #: cylinder, pilot bearing, synchro rings, each in four languages, several
+    #: repeated with different wording. At 5-10s a call that was 158 seconds
+    #: of the 194-second run, and it exhausted the Firecrawl quota mid-answer.
+    #: A per-instance budget bounds the cost of an agent that does not respect
+    #: its own instruction, without needing to change its prompt.
+    REQUEST_CALL_BUDGET = 8
+
     def __init__(self, *, enrich_budget: int = 3) -> None:
+        self._calls_used = 0
         #: Listing pages to open per call. Each is a scrape, and prices only
         #: exist on the page — search results carry titles alone.
         #:
@@ -251,6 +262,7 @@ class ArmenianResearch:
         # is another search against a rate-limited API.
         for term in part_terms[:2]:
             query = f"{ctx.make} {ctx.model} {vehicle.year or ''} {term}".strip()
+            self._calls_used += 1
             try:
                 found = web.search_parts(query, allow_open=not candidates)
             except Exception as exc:  # noqa: BLE001
