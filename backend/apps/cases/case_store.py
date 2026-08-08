@@ -49,7 +49,8 @@ class DjangoCaseStore:
     """pgvector similarity search over CaseRecord."""
 
     def find_similar(self, *, text: str, vehicle: Vehicle, limit: int = 5) -> list[CaseMatch]:
-        """Best matches first. An empty list is normal and fine.
+        """Best matches first, all of them for this exact make/model/year.
+        An empty list is normal and fine.
 
         Filters by vehicle *before* ranking, deliberately. With a global HNSW
         index Postgres applies WHERE after the ANN traversal, so ranking first
@@ -59,11 +60,17 @@ class DjangoCaseStore:
         if not text:
             return []
 
-        candidates, tier = CaseRecord.objects.tiered_for_car(
+        candidates = CaseRecord.objects.for_car(
             make=vehicle.make or "",
             model_name=vehicle.model or "",
             year=vehicle.year,
         )
+        # An unidentified car yields `.none()`, which answers this without
+        # touching the database -- and returning here skips embedding the text,
+        # which is the expensive half of the lookup.
+        if not candidates.exists():
+            return []
+
         rows = candidates.similar_to(embed_text(text), limit=limit)
 
         return [
@@ -71,7 +78,9 @@ class DjangoCaseStore:
                 case=to_case(row),
                 # Embeddings are normalized, so similarity is 1 - cosine distance.
                 score=max(0.0, min(1.0, 1 - float(row.distance))),
-                tier=MatchTier(tier),
+                # Every candidate cleared the same make/model/year filter, so
+                # there is only one tier left to report.
+                tier=MatchTier.EXACT,
             )
             for row in rows
         ]

@@ -1,9 +1,9 @@
 """The Django implementation of carmed.ports.CaseStore, against real pgvector.
 
-No network beyond the local embedding model. The properties tested here are the
-ones the agentic layer's correctness rests on: a match is labelled with how
-tightly we filtered, and a filter that is too tight degrades to a loose match
-rather than to silence.
+No network beyond the local embedding model. The property the agentic layer's
+correctness rests on: a case is only ever returned for the exact car it was
+confirmed on -- same make, same model, a year range covering this one. Anything
+less identified returns nothing rather than something adjacent.
 """
 from django.test import TestCase
 
@@ -14,6 +14,10 @@ from apps.cases.models import CaseRecord
 
 BRAKES = "Grinding noise when braking at low speed, worse in the morning"
 COOLING = "Temperature gauge climbs into the red in traffic and coolant smells sweet"
+
+# The car every fixture case is confirmed on. Lookups have to name it in full:
+# make, model and year are all required now, so a partial vehicle finds nothing.
+CAMRY = Vehicle(make="Toyota", model="Camry", year=2014)
 
 
 def make_case(**overrides):
@@ -36,9 +40,9 @@ def make_case(**overrides):
     return record
 
 
-class TieringTests(TestCase):
-    """`tier` says how tightly we filtered, and it is what decides whether a
-    match may be *served* as an answer or only used as context."""
+class VehicleScopeTests(TestCase):
+    """The filter is the whole safety property: a confirmed fix is evidence
+    about the car it was confirmed on and about no other."""
 
     @classmethod
     def setUpTestData(cls):
@@ -51,29 +55,32 @@ class TieringTests(TestCase):
         matches = self.find(make="Toyota", model="Camry", year=2014)
         self.assertEqual([m.tier for m in matches], [MatchTier.EXACT])
 
-    def test_near_when_year_falls_outside_the_covered_range(self):
-        """The case covers 2010-2017. A 2020 Camry is the same model, so this is
-        still worth showing -- but it is not an exact match and must not claim
-        to be."""
-        matches = self.find(make="Toyota", model="Camry", year=2020)
-        self.assertEqual([m.tier for m in matches], [MatchTier.NEAR])
+    def test_another_model_from_the_same_make_is_never_returned(self):
+        """A Toyota Century question must not be answered out of Camry cases.
+        Same badge, different car -- its confirmed fix says nothing about this
+        one, and offering it as a lead is how a wrong part gets bought."""
+        self.assertEqual(self.find(make="Toyota", model="Century", year=2014), [])
 
-    def test_near_when_year_is_unknown(self):
-        matches = self.find(make="Toyota", model="Camry")
-        self.assertEqual([m.tier for m in matches], [MatchTier.NEAR])
+    def test_year_outside_the_covered_range_is_not_returned(self):
+        """The case covers 2010-2017. A 2020 Camry is a different generation."""
+        self.assertEqual(self.find(make="Toyota", model="Camry", year=2020), [])
 
-    def test_loose_when_only_the_make_is_known(self):
-        matches = self.find(make="Toyota")
-        self.assertEqual([m.tier for m in matches], [MatchTier.LOOSE])
+    def test_unknown_year_returns_nothing(self):
+        """Without a year the filter spans every generation of the model."""
+        self.assertEqual(self.find(make="Toyota", model="Camry"), [])
 
-    def test_loose_when_the_model_has_no_cases_at_all(self):
-        """Degrade to a loose match rather than returning nothing: 'another
-        Toyota had this' is useful context, as long as it is labelled as such."""
-        matches = self.find(make="Toyota", model="Corolla", year=2014)
-        self.assertEqual([m.tier for m in matches], [MatchTier.LOOSE])
+    def test_make_alone_returns_nothing(self):
+        self.assertEqual(self.find(make="Toyota"), [])
 
-    def test_no_vehicle_at_all_still_searches(self):
-        self.assertEqual([m.tier for m in self.find()], [MatchTier.LOOSE])
+    def test_no_vehicle_at_all_returns_nothing(self):
+        self.assertEqual(self.find(), [])
+
+    def test_open_year_bounds_still_match(self):
+        """Null bounds are the KB saying the case holds for the model whatever
+        the year -- a statement about the data, not a widened filter."""
+        make_case(car_year_start=None, car_year_end=None, symptom_text=COOLING)
+        matches = self.find(make="Toyota", model="Camry", year=1994)
+        self.assertEqual([m.case.symptom for m in matches], [COOLING])
 
 
 class FilteringTests(TestCase):
@@ -93,17 +100,13 @@ class FilteringTests(TestCase):
 
     def test_empty_query_returns_empty_without_embedding_anything(self):
         make_case()
-        self.assertEqual(
-            DjangoCaseStore().find_similar(text="", vehicle=Vehicle(make="Toyota")), []
-        )
+        self.assertEqual(DjangoCaseStore().find_similar(text="", vehicle=CAMRY), [])
 
     def test_rows_without_an_embedding_are_skipped(self):
         CaseRecord.objects.create(
             car_make="Toyota", car_model="Camry", symptom_text=BRAKES, confirmed_fix="x"
         )
-        self.assertEqual(
-            DjangoCaseStore().find_similar(text=BRAKES, vehicle=Vehicle(make="Toyota")), []
-        )
+        self.assertEqual(DjangoCaseStore().find_similar(text=BRAKES, vehicle=CAMRY), [])
 
 
 class ScoringTests(TestCase):
@@ -115,7 +118,7 @@ class ScoringTests(TestCase):
     def test_scores_are_similarities_in_range_and_best_first(self):
         matches = DjangoCaseStore().find_similar(
             text="loud grinding from the front wheels when I press the brake",
-            vehicle=Vehicle(make="Toyota", model="Camry", year=2014),
+            vehicle=CAMRY,
         )
         scores = [m.score for m in matches]
         self.assertEqual(len(scores), 2)
@@ -124,9 +127,7 @@ class ScoringTests(TestCase):
         self.assertEqual(matches[0].case.id, str(self.brakes.pk))
 
     def test_limit_is_honoured(self):
-        matches = DjangoCaseStore().find_similar(
-            text=BRAKES, vehicle=Vehicle(make="Toyota"), limit=1
-        )
+        matches = DjangoCaseStore().find_similar(text=BRAKES, vehicle=CAMRY, limit=1)
         self.assertEqual(len(matches), 1)
 
 
@@ -138,11 +139,11 @@ class MappingTests(TestCase):
     def test_case_carries_the_pk_as_its_id(self):
         """Agents cite "case:<id>" and finalize resolves it back. An id that
         isn't stable means the citation is silently dropped."""
-        match = DjangoCaseStore().find_similar(text=BRAKES, vehicle=Vehicle(make="Toyota"))[0]
+        match = DjangoCaseStore().find_similar(text=BRAKES, vehicle=CAMRY)[0]
         self.assertEqual(match.case.id, str(self.record.pk))
 
     def test_symptom_fix_and_parts_come_across(self):
-        case = DjangoCaseStore().find_similar(text=BRAKES, vehicle=Vehicle(make="Toyota"))[0].case
+        case = DjangoCaseStore().find_similar(text=BRAKES, vehicle=CAMRY)[0].case
         self.assertEqual(case.symptom, self.record.symptom_text)
         self.assertEqual(case.fix, self.record.confirmed_fix)
         self.assertEqual(case.part_names, ["brake pads", "rotors"])
@@ -150,9 +151,9 @@ class MappingTests(TestCase):
     def test_system_area_is_classified_from_the_symptom(self):
         """Derived from carmed's trilingual symptom table rather than stored, so
         it can never drift out of step with the routing that uses it."""
-        case = DjangoCaseStore().find_similar(text=BRAKES, vehicle=Vehicle(make="Toyota"))[0].case
+        case = DjangoCaseStore().find_similar(text=BRAKES, vehicle=CAMRY)[0].case
         self.assertEqual(case.system_area, SystemArea.BRAKES)
 
     def test_no_source_url_is_invented(self):
-        case = DjangoCaseStore().find_similar(text=BRAKES, vehicle=Vehicle(make="Toyota"))[0].case
+        case = DjangoCaseStore().find_similar(text=BRAKES, vehicle=CAMRY)[0].case
         self.assertIsNone(case.source_url)

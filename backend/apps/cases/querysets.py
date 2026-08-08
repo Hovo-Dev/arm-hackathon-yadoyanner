@@ -15,34 +15,29 @@ class CaseRecordQuerySet(models.QuerySet):
             ).filter(models.Q(car_year_end__isnull=True) | models.Q(car_year_end__gte=year))
         return qs
 
-    def tiered_for_car(self, *, make="", model_name="", year=None):
-        """Narrow to the tightest vehicle filter that still has rows, and say
-        how tightly we ended up filtering.
+    def for_car(self, *, make="", model_name="", year=None):
+        """Cases for exactly this car: same make, same model, and a year range
+        covering this one.
 
-        Returns `(queryset, tier)` where tier is "exact" | "near" | "loose" --
-        the string values of carmed's MatchTier, so this app never has to
-        import the agentic layer. The tier is what decides whether a match may
-        be *served* as an answer or only used as context: "some Toyota had this
-        once" is not an answer about this car.
+        There is deliberately no widening fallback. Matching a Toyota Century
+        against Camry cases because both are Toyotas puts another car's
+        confirmed fix in front of the diagnostician as evidence, and a fix
+        confirmed on a different model is not information about this one --
+        labelling it "loose" did not stop it being read as a lead.
 
-        Falls back tighter -> looser, because an over-tight filter that returns
-        nothing is worse than a loose match honestly labelled as loose.
+        A car we cannot fully identify is the same problem: without the model
+        the filter is make-wide, and without the year it spans every generation
+        of that model. Both return nothing rather than something adjacent.
+
+        A row with open year bounds still matches -- that is the KB saying the
+        case applies to the model regardless of year, not a widened filter.
         """
-        if not make:
-            return self, "loose"
+        if not (make and model_name and year):
+            return self.none()
 
-        by_make = self.filter(car_make__iexact=make)
-        if not model_name:
-            return by_make, "loose"
-
-        by_model = by_make.filter(car_model__iexact=model_name)
-        if not by_model.exists():
-            return by_make, "loose"
-        if not year:
-            return by_model, "near"
-
-        by_year = by_model.matching_car(year=year)
-        return (by_year, "exact") if by_year.exists() else (by_model, "near")
+        return self.filter(car_make__iexact=make, car_model__iexact=model_name).matching_car(
+            year=year
+        )
 
     def similar_to(self, embedding, limit=5):
         return (
