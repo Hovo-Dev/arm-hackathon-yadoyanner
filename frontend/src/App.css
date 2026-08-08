@@ -846,6 +846,94 @@ textarea {
 .steps { margin: 0; padding: 0 16px 0 34px; font-size: 13px; }
 .steps li { margin-bottom: 4px; }
 
+/* --- What to buy ------------------------------------------------------ */
+
+.part { padding: 2px 16px 8px; }
+
+.part-name { font-size: 13px; font-weight: 600; }
+.part-nums { font-weight: 400; color: var(--muted); font-size: 11px; }
+.part-aliases { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.listings { margin: 5px 0 0; padding: 0; list-style: none; }
+
+.listings li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.listings li:last-child { border-bottom: 0; }
+.listings a { flex: 1; color: inherit; text-decoration: none; }
+.listings a:hover { text-decoration: underline; }
+
+/* Price is the number people scan for, so it is the one thing set in a
+   monospace face and given weight. "ask seller" uses the muted colour: an
+   unopened listing must not read like a cheap one. */
+.price {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.listings li .price:not(:empty) { color: var(--accent); }
+.cond { font-size: 10px; color: var(--muted); text-transform: lowercase; }
+
+/* --- fitment ----------------------------------------------------------- */
+
+.fitment { padding: 4px 16px 8px; display: grid; gap: 4px; }
+
+.fit-check, .fit-block {
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border-left: 3px solid;
+}
+
+.fit-check {
+  background: rgba(234, 88, 12, 0.10);
+  border-color: #ea580c;
+  color: #ea580c;
+}
+
+/* Blocking means the part is known not to fit, so it reads like the refusal
+   it is rather than like advice. */
+.fit-block {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: #dc2626;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* --- Who to call ------------------------------------------------------- */
+
+.shops { margin: 0; padding: 0 16px; list-style: none; }
+
+.shops li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.shops li:last-child { border-bottom: 0; }
+.shop-name { font-weight: 600; }
+
+.shop-phone {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.shop-phone:hover { text-decoration: underline; }
+.shop-area { color: var(--muted); flex: 1 1 100%; font-size: 11px; }
+
 .answer-foot {
   display: flex;
   gap: 12px;

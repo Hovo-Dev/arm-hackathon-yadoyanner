@@ -15,3 +15,8 @@ openai>=2,<3
 langgraph>=1.2,<2
 langchain-openai>=1.4,<2
 pydantic>=2.9,<3
+
+# The research package (/research) — NHTSA, vPIC, turn.am and Firecrawl
+# adapters. httpx arrives transitively via openai, but this package calls
+# it directly, so it is pinned here rather than relied on by accident.
+httpx>=0.27,<1

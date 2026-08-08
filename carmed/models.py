@@ -125,10 +125,32 @@ class Vehicle(BaseModel):
 class Query(BaseModel):
     """The input to this component."""
 
+    #: Canonical, normalized English. This is the *retrieval* key: it is what
+    #: gets embedded and compared against Case.symptom, so it has to be in the
+    #: language the case base is written in rather than the one the owner used.
     text: str = ""
+    #: What the owner actually typed, in whatever language and script they
+    #: typed it. Optional; when blank, `asked` falls back to `text` and this
+    #: component behaves exactly as it did before the field existed.
+    #:
+    #: The two are separate because `text` is lossy on purpose -- producing it
+    #: means translating terse Latin-script Armenian ("matory ercnuma"), which
+    #: is a step that can and does get the complaint wrong. Everything that
+    #: *reasons* should read `asked`, so a bad normalization costs a missed
+    #: case match instead of a confident diagnosis of a problem nobody has.
+    raw_text: str = ""
     vehicle: Vehicle = Field(default_factory=Vehicle)
     city: str = "Yerevan"
     mileage_km: int | None = None
+
+    @property
+    def asked(self) -> str:
+        """The owner's own words where we have them, the normalized text
+        otherwise. Use this for routing, language detection, the symptom
+        keyword tables and anything shown to an agent -- all of them are
+        better on the original, and carmed.text is transliteration-aware.
+        Retrieval is the one caller that wants `text` instead."""
+        return self.raw_text or self.text
 
 
 # ---------------------------------------------------------------------------

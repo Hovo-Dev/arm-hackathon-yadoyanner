@@ -65,16 +65,26 @@ SYMPTOM_KEYWORDS: dict[SystemArea, tuple[str, ...]] = {
         # is the one miss that actually hurts someone. The Russian and Armenian
         # entries are already stems and need no equivalent.
         "brake", "braking", "pad", "caliper", "rotor", "abs", "argelak", "tormoz",
+        # Latin-keyboard spellings. "kalodka" is the Russian колодка as an
+        # Armenian speaker types it, and it is the most common way people name
+        # brake pads here — missing it meant "kalodkanery mashvel en" (my pads
+        # are worn) classified as unknown, so the safety floor never fired.
+        "kalodka", "kolodka", "argelag", "arkelak", "tormaz", "support",
     ),
     SystemArea.STEERING: (
         "ղեկ", "руль", "рулев", "рейк", "гур",
         "steering", "steer", "rack", "tie rod", "ghek",
+        "rulev", "rul ", "lyuft", "lyft", "reyk", "nakonechnik",
     ),
     SystemArea.SUSPENSION: (
         "ամորտիզատոր", "անվահեծ", "կախոց", "առանցքակալ",
         "амортизатор", "подвеск", "рычаг", "стойк", "шаровая", "подшипник", "ступиц",
         "suspension", "shock", "strut", "bushing", "ball joint", "wheel bearing",
         "bearing", "control arm", "amortizator", "anvahec",
+        # անվադող (tyre) is a different word from անվահեծ (wheel bearing) and
+        # was absent entirely — a burst tyre read as unknown.
+        "anvadog", "anvadox", "shina", "rezin", "podshipnik", "shrus",
+        "stoyka", "sharovaya", "rychag",
     ),
     SystemArea.AIRBAG: (
         "բարձիկ", "подушк", "airbag", "air bag", "srs", "podushka",
@@ -82,18 +92,29 @@ SYMPTOM_KEYWORDS: dict[SystemArea, tuple[str, ...]] = {
     SystemArea.ENGINE: (
         "շարժիչ", "մոտոր", "մոմ", "двигател", "мотор", "масл", "свеч", "троит",
         "engine", "motor", "misfire", "spark plug", "stall", "dvigatel",
+        # "motor" is not a substring of "matory", the usual Latin-Armenian
+        # spelling, so the most natural way to say it here missed.
+        "matory", "motory", "sharzhich", "sharjich", "mom ", "svech", "troit",
     ),
     SystemArea.TRANSMISSION: (
         "փոխանցման", "կցորդիչ", "коробк", "кпп", "акпп", "сцеплен", "переключ",
-        "transmission", "gearbox", "clutch", "shift", "cvt", "korobka",
+        "transmission", "gearbox", "clutch", "shift", "cvt",
+        # Stems, not whole words: "korobka" alone missed "karobki", which is
+        # how the gearbox is actually spelled on a Latin keyboard here ("mexanika
+        # karobki pervi vaxt dzena galis"). The Cyrillic entry above is already
+        # a stem for the same reason.
+        "korobk", "karobk",
+        "akpp", "kpp", "sceplenie", "peredach", "variator",
     ),
     SystemArea.ELECTRICAL: (
         "մարտկոց", "գեներատոր", "аккумулятор", "генератор", "стартер", "предохранител",
         "electrical", "battery", "alternator", "fuse", "starter", "wiring",
+        "akumlyator", "akumulyator", "generator", "elektrik", "predohranitel",
     ),
     SystemArea.COOLING: (
         "ռադիատոր", "անտիֆրիզ", "радиатор", "охлажден", "антифриз", "перегрев",
         "cooling", "radiator", "coolant", "thermostat", "overheat",
+        "ercnum", "ercnuma", "eruma", "antifriz", "peregrev", "termostat",
     ),
     SystemArea.EXHAUST: (
         "կատալիզատոր", "выхлоп", "глушител", "катализатор", "лямбда",

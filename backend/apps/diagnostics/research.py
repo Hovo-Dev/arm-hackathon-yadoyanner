@@ -44,5 +44,26 @@ class NullResearchTool:
 
 def get_research_tool():
     """The single swap point. Point this at the real tool when it lands --
-    nothing else in the Django layer needs to change."""
-    return NullResearchTool()
+    nothing else in the Django layer needs to change.
+
+    `ArmenianResearch` is that tool: NHTSA complaints and open web search for
+    knowledge, list.am plus Russian suppliers for parts, turn.am's directory
+    for workshops. It falls back to `NullResearchTool` when the package is not
+    importable, because an unavailable source is a supported state here and a
+    500 on every diagnosis is not.
+
+    Only turn.am needs no key. Parts and knowledge search need
+    FIRECRAWL_API_KEY (or PERPLEXITY_API_KEY); without one those two methods
+    return nothing, exactly as the Null tool does, and the trace records the
+    zero rather than hiding it.
+    """
+    try:
+        from adapters.armenian import ArmenianResearch
+    except Exception as exc:  # noqa: BLE001 - never break the request path
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "ArmenianResearch unavailable (%s) — falling back to NullResearchTool", exc
+        )
+        return NullResearchTool()
+    return ArmenianResearch()

@@ -21,6 +21,7 @@ from carmed.graph import State
 from carmed.models import Diagnosis, Trace
 
 from .case_store import PastCaseStore
+from .enums import MessageRole
 from .research import get_research_tool
 
 logger = logging.getLogger(__name__)
@@ -49,16 +50,45 @@ def get_chat_model():
     )
 
 
+def _raw_user_text(diagnostic_request) -> str:
+    """Every user turn, in the owner's own words, oldest first.
+
+    The assistant's turns are left out: they are clarifying questions, and a
+    problem statement that absorbs the question rather than the answer
+    describes a car nobody reported.
+    """
+    contents = (
+        diagnostic_request.messages.filter(role=MessageRole.USER)
+        .order_by("created_at")
+        .values_list("content", flat=True)
+    )
+    return " ".join(content.strip() for content in contents if content and content.strip())
+
+
 def build_query(diagnostic_request) -> Query:
     """DiagnosticRequest -> carmed Query.
 
-    `symptom_text` is the right thing to send: it is the rolling summary of the
-    whole conversation, refreshed after every user turn (see
-    services.refresh_symptom_and_matches), so it already reflects the clarified
-    problem rather than the user's first vague sentence.
+    Both forms of the complaint go in, because they are load-bearing for
+    different things (see carmed.models.Query).
+
+    `symptom_text` is the rolling summary, refreshed after every user turn (see
+    services.refresh_symptom_and_matches), normalized into the English the Case
+    KB is written in so the pgvector lookup can work at all.
+
+    `raw_text` is what the owner typed. It is passed because producing
+    `symptom_text` means translating terse Latin-script Armenian, and that step
+    is wrong often enough to matter -- "matory ercnuma" (the engine is boiling)
+    came back as "car jerks and hesitates while driving", and the graph then
+    produced an excellent, well-sourced crankshaft-position-sensor diagnosis
+    for a cooling fault. Sending both means a bad translation costs a missed
+    case match rather than a confident answer to the wrong question, and it
+    also gets the reply back in the owner's language: carmed detects language
+    from what it is given, and an English summary made every conversation look
+    English.
     """
     return Query(
         text=diagnostic_request.symptom_text or "",
+        raw_text=_raw_user_text(diagnostic_request),
         vehicle=Vehicle(
             make=diagnostic_request.car_make or None,
             model=diagnostic_request.car_model or None,

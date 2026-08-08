@@ -341,6 +341,78 @@ function AnswerCard({ answer, latest = true, at }) {
         </>
       )}
 
+      {/* What to buy. Each PartOption's listing_ids resolve against
+          `answer.listings`, so prices and links come from the record rather
+          than from anything the model wrote. A listing whose page was never
+          opened has no price -- shown as "ask seller" rather than left blank,
+          because an empty price reads as free. */}
+      {answer.parts?.options?.length > 0 && (
+        <>
+          <div className="answer-section">What to buy</div>
+          {answer.parts.options.map((opt, i) => (
+            <div className="part" key={i}>
+              <div className="part-name">
+                {opt.name_en}
+                {opt.part_numbers?.length > 0 && (
+                  <span className="part-nums"> &middot; {opt.part_numbers.join(", ")}</span>
+                )}
+              </div>
+              {opt.aliases?.length > 0 && (
+                <div className="part-aliases">also sold as: {opt.aliases.join(" \u00b7 ")}</div>
+              )}
+              <ul className="listings">
+                {(opt.listing_ids || []).map((lid) => {
+                  const l = answer.listings?.[lid];
+                  if (!l) return null;
+                  return (
+                    <li key={lid}>
+                      <a href={l.url} target="_blank" rel="noreferrer">{l.title}</a>
+                      <span className="price">
+                        {l.price
+                          ? Math.round(l.price.amount).toLocaleString() + " " + l.price.currency
+                          : "ask seller"}
+                      </span>
+                      {l.condition && <span className="cond">{l.condition}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Fitment warnings sit with the parts deliberately: they qualify a
+          specific listing, and separating them from what they qualify is how
+          someone buys the wrong part. */}
+      {answer.parts?.fitment_warnings?.length > 0 && (
+        <div className="fitment">
+          {answer.parts.fitment_warnings.map((w, i) => (
+            <div key={i} className={w.severity === "blocking" ? "fit-block" : "fit-check"}>
+              {w.severity === "blocking" ? "Does not fit" : "Check fitment"} &mdash; {w.message}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Who to call. The phone number is the most actionable thing on the
+          page, and every shop has one -- the research layer drops any record
+          whose number it cannot read. */}
+      {answer.shops?.length > 0 && (
+        <>
+          <div className="answer-section">Who to call</div>
+          <ul className="shops">
+            {answer.shops.map((s) => (
+              <li key={s.id}>
+                <span className="shop-name">{s.name}</span>
+                <a className="shop-phone" href={"tel:" + s.phone}>{s.phone}</a>
+                {s.area && <span className="shop-area">{s.area}</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <div className="answer-foot">
         {answer.from_cache && <span className="ok">From a confirmed past repair</span>}
         <span className={answer.dropped_refs === 0 ? "ok" : "bad"}>

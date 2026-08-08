@@ -322,9 +322,22 @@ def _schema_hint(schema: type[BaseModel], example: str) -> str:
     )
 
 
-def _make(model: Any, tools: list[BaseTool], prompt: str, schema: type[BaseModel], name: str):
+def _make(model: Any, tools: list[BaseTool], prompt: str, schema: type[BaseModel],
+          name: str, reasoning: bool = True):
+    """Wire one agent.
+
+    `reasoning=False` turns off the model's chain-of-thought for agents whose
+    job does not need it. deepseek-v4-pro emits its deliberation before
+    answering and the caller waits for all of it: measured, that is ~16s for
+    the router to choose one of four intents, against ~2s without. The
+    diagnostician keeps it, because weighing which cause the evidence supports
+    is exactly the work reasoning is for.
+    """
+    bind: dict[str, Any] = {"response_format": {"type": "json_object"}}
+    if not reasoning:
+        bind["extra_body"] = {"reasoning": {"enabled": False}}
     try:
-        model = model.bind(response_format={"type": "json_object"})
+        model = model.bind(**bind)
     except Exception:
         pass
     return create_react_agent(
@@ -337,7 +350,8 @@ def _make(model: Any, tools: list[BaseTool], prompt: str, schema: type[BaseModel
 
 
 def build_router(model: Any):
-    return _make(model, [], ROUTER_PROMPT, IntentDecision, "router")
+    # Picking one of four labels from a sentence. No deliberation required.
+    return _make(model, [], ROUTER_PROMPT, IntentDecision, "router", reasoning=False)
 
 
 def build_diagnostician(model: Any, knowledge_tool: BaseTool):

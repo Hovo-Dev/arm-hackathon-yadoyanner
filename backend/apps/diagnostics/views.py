@@ -59,7 +59,11 @@ class DiagnosticRequestViewSet(viewsets.ModelViewSet):
         the chat one carries no urgency verdict, no evidence refs and no
         source-checked claims -- it only ever contradicted the real one."""
         DiagnosticMessage.objects.create(request=instance, role=MessageRole.USER, content=raw_text)
-        refresh_symptom_and_matches(instance)
+        # Deliberately NOT summarizing here. It is an LLM call plus an
+        # embedding plus a vector query -- about eight seconds during which
+        # POST /api/diagnostics/ has not returned, so the browser shows nothing
+        # at all and the user cannot tell the app from a hang. The run stream
+        # does it as its first step instead, where the work is narrated.
 
     @action(detail=True, methods=["post"])
     def finalize(self, request, pk=None):
@@ -119,7 +123,12 @@ class DiagnosticRunStreamView(views.APIView):
         # would dutifully run the whole graph and spend two model calls asking
         # what the car is -- and the diagnostician's prompt would carry an empty
         # "Problem (xx):" line, xx being the unknown-language tag.
-        if not diagnostic_request.symptom_text.strip():
+        # An empty symptom is only an error when there is nothing to make one
+        # from. With a user turn present the stream summarizes it first --
+        # creation no longer does, so that the POST returns instantly.
+        if not diagnostic_request.symptom_text.strip() and not (
+            diagnostic_request.messages.filter(role=MessageRole.USER).exists()
+        ):
             return response.Response(
                 {"detail": "Describe the problem first -- there is nothing to diagnose yet."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -138,6 +147,36 @@ class DiagnosticRunStreamView(views.APIView):
         # it twice means the two can drift.
         trace = []
         try:
+            # Understanding the problem is the first visible step rather than a
+            # silent wait on the create call. Emitting it here means the user
+            # sees "reading what you wrote" immediately and watches the case KB
+            # being checked, instead of staring at a frozen form.
+            if not diagnostic_request.symptom_text.strip():
+                opening = {"type": "step", "name": "understand"}
+                trace.append(opening)
+                yield f"data: {json.dumps(opening)}\n\n"
+
+                refresh_symptom_and_matches(diagnostic_request)
+                diagnostic_request.refresh_from_db()
+
+                noted = {
+                    "type": "note",
+                    "text": f"understood as: {diagnostic_request.symptom_text}",
+                }
+                trace.append(noted)
+                yield f"data: {json.dumps(noted)}\n\n"
+
+                matched = {
+                    "type": "lookup",
+                    "name": "case_store.find_similar",
+                    "count": diagnostic_request.case_matches.count(),
+                }
+                trace.append(matched)
+                yield f"data: {json.dumps(matched)}\n\n"
+
+            # exclude_request_id is Davit's: the KB is now this system's own
+            # finished diagnoses, so without it a request would match itself
+            # and be served its own unanswered question as a past case.
             for event in stream_run(
                 build_query(diagnostic_request), exclude_request_id=diagnostic_request.pk
             ):

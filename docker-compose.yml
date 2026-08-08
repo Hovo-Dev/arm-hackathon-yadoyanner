@@ -27,6 +27,11 @@ services:
       # mergeable and `python -m carmed.cli` still works from the repo root.
       - ./carmed:/app/carmed
       - ./adapters:/app/adapters
+      # adapters/armenian.py imports this; without the mount the Django seam
+      # silently falls back to NullResearchTool and every answer loses its
+      # parts, shops and sources.
+      - ./research:/app/research
+      - ./data:/app/data
       - ./tests:/app/tests
       - media_data:/app/media
       # The sentence-transformers weights are ~500MB and are fetched at first
@@ -45,6 +50,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-${DEEP_SEEK_API_KEY:-}}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-deepseek/deepseek-v4-pro}
+      # Parts and knowledge search. turn.am (workshops) needs no key.
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

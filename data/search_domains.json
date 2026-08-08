@@ -1,0 +1,62 @@
+{
+  "_comment": [
+    "Allowlist for live web search. Edited as data, not code — add a marketplace",
+    "or forum here and the research agent can reach it on the next run.",
+    "The provider caps search_domain_filter at 20 entries, so keep the enabled",
+    "set under that. Anything listed in research/config.py BLOCKED_SOURCES must",
+    "never appear here.",
+    "",
+    "drive2.ru is deliberately absent: its robots.txt is a blanket Disallow with",
+    "named blocks on GPTBot, PerplexityBot and ClaudeBot.",
+    "manual_specs was added after measuring that a live search finds the official OEM manual PDF (e.g. techinfo.honda.com) in ~1.4s for any vehicle, while the local corpus covered 8 makes and produced four provenance bugs (French manual, cross-make fallback, motorcycle contamination, mislabeled source). Web search is now the primary manual path; data/manuals is a cache.",
+    "services group added for the 'who do I take it to' step. manual_specs and manuals groups removed with the manual tooling. NOTE: this file is now only read by url_allowed() - it is a SCRAPE permission list, not a search config. Search scoping lives in _PARTS_PASSES / _SERVICE_PASSES in web.py."
+  ],
+  "groups": {
+    "armenian_market": {
+      "description": "Local listings and dealers — parts availability and local pricing",
+      "domains": [
+        "list.am",
+        "auto.am",
+        "am.all.biz"
+      ]
+    },
+    "regional_parts": {
+      "description": "Where Armenian buyers actually source parts: Russia and Georgia",
+      "domains": [
+        "exist.ru",
+        "emex.ru",
+        "avito.ru",
+        "drom.ru",
+        "autopiter.ru"
+      ]
+    },
+    "eu_catalogues": {
+      "description": "Part-number cross-reference and OEM/aftermarket mapping",
+      "domains": [
+        "autodoc.de",
+        "rockauto.com",
+        "partsouq.com"
+      ]
+    },
+    "official": {
+      "description": "Regulator data: recalls, complaints, investigations",
+      "domains": [
+        "nhtsa.gov"
+      ]
+    },
+    "services": {
+      "description": "Where to find a workshop once the part is known. turn.am is an Armenian services marketplace with a /category/car-services section; spyur.am is the national business directory. Both allow User-agent: * in robots.txt.",
+      "domains": [
+        "turn.am",
+        "spyur.am"
+      ]
+    }
+  },
+  "enabled_groups": [
+    "armenian_market",
+    "regional_parts",
+    "eu_catalogues",
+    "official",
+    "services"
+  ]
+}

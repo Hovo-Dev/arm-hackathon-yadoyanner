@@ -103,8 +103,16 @@ def _make_vehicle(log: ag.RunLog):
                 "status": AnswerStatus.REFUSED_BAD_VIN,
                 "message": problem,
             }
-        area = txt.classify_area(state.query.text)
-        lang = txt.detect_lang(state.query.text).value
+        # The owner's own words first -- the symptom table is transliteration
+        # aware, so it usually reads them directly. The normalized text is the
+        # fallback rather than the primary because it is a translation and can
+        # be wrong; but when a transliteration is simply missing from the table
+        # (they are added as we meet them), plain English is what saves the
+        # routing from UNKNOWN.
+        area = txt.classify_area(state.query.asked)
+        if area is SystemArea.UNKNOWN:
+            area = txt.classify_area(state.query.text)
+        lang = txt.detect_lang(state.query.asked).value
         log.note(f"car={car.describe()} region={car.region.value} lang={lang} area={area}")
         return {"vehicle": car, "lang": lang, "system_area": area}
 
@@ -123,7 +131,7 @@ def _make_route(model: Any, log: ag.RunLog):
 
     def route(state: State) -> dict:
         log.step("route")
-        lowered = state.query.text.casefold()
+        lowered = state.query.asked.casefold()
         for intent, needles in _HEURISTICS:
             if any(n in lowered for n in needles):
                 log.note(f"intent={intent} (keyword, no model call)")
@@ -136,7 +144,7 @@ def _make_route(model: Any, log: ag.RunLog):
         try:
             decision, _ = ag.invoke(
                 router,
-                prompt=state.query.text,
+                prompt=state.query.asked,
                 vehicle=state.vehicle,
                 city=state.query.city,
                 system_area=state.system_area,
@@ -165,6 +173,13 @@ def _make_gate(case_store: CaseStore, log: ag.RunLog):
     def gate(state: State) -> dict:
         log.step("gate")
         try:
+            # The one step that wants `text` and not `asked`: this is a vector
+            # lookup against a case base written in English, Russian and
+            # Armenian script, so it needs the normalized form. Measured, the
+            # owner's raw Latin-script Armenian embeds to nothing useful -- it
+            # ranked the wrong case first in 3 of 4 probes -- which is exactly
+            # why the normalization exists, and exactly why nothing that
+            # reasons should depend on it having come out right.
             matches = case_store.find_similar(
                 text=state.query.text, vehicle=state.vehicle, limit=5
             )
@@ -253,7 +268,7 @@ def _make_diagnose(model: Any, tools: dict, log: ag.RunLog):
             lines.append(f"Market: {state.vehicle.region.value}")
         if state.query.mileage_km:
             lines.append(f"Mileage: {state.query.mileage_km:,} km")
-        lines.append(f"Problem ({state.lang}): {state.query.text}")
+        lines.append(f"Problem ({state.lang}): {state.query.asked}")
         if state.matches:
             lines.append("\nSimilar past cases you may cite as evidence:")
             lines.append(_case_lines(state.matches))
@@ -404,7 +419,16 @@ def _make_finalize(log: ag.RunLog, safety_floor: bool):
         update["dropped_refs"] = dropped
 
         if diagnosis and safety_floor:
-            areas = txt.all_areas(state.query.text) | {state.system_area}
+            # Both forms, deliberately. A safety floor must never see *fewer*
+            # areas than before: the raw text catches transliterated brake
+            # words the English summary lost, the summary catches the ones the
+            # table does not know yet, and missing "brakes" is the one failure
+            # here that hurts someone.
+            areas = (
+                txt.all_areas(state.query.asked)
+                | txt.all_areas(state.query.text)
+                | {state.system_area}
+            )
             critical = areas & SAFETY_CRITICAL
             if critical and diagnosis.urgency < Urgency.DO_NOT_DRIVE:
                 names = ", ".join(sorted(a.value for a in critical))

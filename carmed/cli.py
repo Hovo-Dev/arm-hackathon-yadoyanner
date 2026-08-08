@@ -191,13 +191,25 @@ def main(argv: list[str] | None = None) -> int:
                    help="show each prompt sent and each reply received")
     p.add_argument("--json", action="store_true", help="print the Answer as JSON")
     p.add_argument("--graph", action="store_true", help="print the graph and exit")
+    p.add_argument("--dummy", action="store_true",
+                   help="use the fake corpus instead of live Armenian sources")
     args = p.parse_args(argv)
 
     from adapters.dummy import DummyCaseStore, DummyResearch
 
     # The single line a real deployment changes: swap these two objects for
     # your implementations. Nothing else in the CLI knows the difference.
-    research, case_store = DummyResearch(), DummyCaseStore()
+    #
+    # ResearchTool is live: list.am and Russian suppliers for parts, turn.am's
+    # directory for workshops, NHTSA for complaints. CaseStore is still the
+    # dummy — the pgvector store lives in the Django app, not here.
+    if args.dummy or args.graph:
+        research = DummyResearch()
+    else:
+        from adapters.armenian import ArmenianResearch
+
+        research = ArmenianResearch()
+    case_store = DummyCaseStore()
 
     # --graph needs a compiled graph but no model and no real request, so the
     # dummy adapters are enough and nothing is spent.
