@@ -109,10 +109,25 @@ EMBEDDING_MODEL_NAME = env(
 )
 EMBEDDING_DIM = env.int("EMBEDDING_DIM", default=384)
 
-# Minimum cosine similarity a Case KB record must hit against a
-# DiagnosticRequest's embedding to be persisted as a confident match
-# (Agent 4 case gate, spec section 3).
-CASE_MATCH_CONFIDENCE_THRESHOLD = env.float("CASE_MATCH_CONFIDENCE_THRESHOLD", default=0.75)
+# Minimum cosine similarity a past diagnosis must reach to be treated as
+# evidence about the current one. Applied once, at retrieval, so the cases the
+# diagnostician reasons over and the ones shown in the UI are the same set.
+#
+# Without a floor the store returned the nearest five whatever their score, and
+# "my car smells like vanilla" pulled five brake repairs at 0.21-0.33 into the
+# prompt under the heading "similar past cases you may cite as evidence".
+CASE_MATCH_MIN_SIMILARITY = env.float("CASE_MATCH_MIN_SIMILARITY", default=0.7)
+
+# The second, much higher bar: at or above this a past diagnosis is served
+# straight back and the diagnostician, parts and shops agents never run -- the
+# whole point being that re-deriving an answer we already have costs three
+# model calls and half a minute to arrive at the same place.
+#
+# Deliberately far above the evidence floor. Between the two a case is context
+# for a fresh answer; only a near-identical description of the same problem on
+# the same car is allowed to *be* the answer. carmed applies its own 0.80 floor
+# on top, so lowering this below that has no effect.
+CASE_SERVE_MIN_SIMILARITY = env.float("CASE_SERVE_MIN_SIMILARITY", default=0.95)
 
 # --- LLM access (OpenRouter -> DeepSeek gateway, see /setup/README.md) ---
 OPENROUTER_API_KEY = env("OPENROUTER_API_KEY", default=env("DEEP_SEEK_API_KEY", default=""))
@@ -139,5 +154,5 @@ CARMED_SAFETY_FLOOR = env.bool("CARMED_SAFETY_FLOOR", default=True)
 # Used for shop lookups when a request doesn't name a city.
 CARMED_DEFAULT_CITY = env("CARMED_DEFAULT_CITY", default="Yerevan")
 
-# How many KB cases to pull per gate check (carmed's own default is 5).
+# How many past completed cases to pull per gate check (carmed default is 5).
 CARMED_CASE_LIMIT = env.int("CARMED_CASE_LIMIT", default=5)

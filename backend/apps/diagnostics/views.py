@@ -34,7 +34,7 @@ class DiagnosticRequestViewSet(viewsets.ModelViewSet):
 
     queryset = (
         DiagnosticRequest.objects.all()
-        .prefetch_related("images", "messages", "runs", "case_matches__case")
+        .prefetch_related("images", "messages", "runs", "case_matches__matched")
         .order_by("-created_at")
     )
     serializer_class = DiagnosticRequestSerializer
@@ -138,7 +138,9 @@ class DiagnosticRunStreamView(views.APIView):
         # it twice means the two can drift.
         trace = []
         try:
-            for event in stream_run(build_query(diagnostic_request)):
+            for event in stream_run(
+                build_query(diagnostic_request), exclude_request_id=diagnostic_request.pk
+            ):
                 if event["type"] == "done":
                     summary = event["answer"]
                 else:

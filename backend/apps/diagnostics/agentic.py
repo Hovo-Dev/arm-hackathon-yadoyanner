@@ -1,8 +1,9 @@
 """The bridge between Django and the agentic layer (/carmed).
 
 This is the only module that calls `carmed.run`. Everything it needs comes from
-two ports we implement: `apps.cases.case_store.DjangoCaseStore` (pgvector over
-the Case KB) and `apps.diagnostics.research.get_research_tool` (blank for now).
+two ports we implement: `case_store.PastCaseStore` (pgvector over this
+system's own completed diagnoses) and `research.get_research_tool` (blank for
+now).
 
 carmed itself is untouched -- it stays byte-identical to feature/agentic-loop so
 that branch keeps working and the incoming ResearchTool branch merges cleanly.
@@ -15,12 +16,11 @@ from functools import lru_cache
 from django.conf import settings
 from django.db import connection
 
-from apps.cases.case_store import DjangoCaseStore
-
 from carmed import Answer, Query, Vehicle, build, run
 from carmed.graph import State
 from carmed.models import Diagnosis, Trace
 
+from .case_store import PastCaseStore
 from .research import get_research_tool
 
 logger = logging.getLogger(__name__)
@@ -69,14 +69,18 @@ def build_query(diagnostic_request) -> Query:
     )
 
 
-def run_query(query: Query) -> Answer:
+def run_query(query: Query, exclude_request_id=None) -> Answer:
     """One pass through the graph. Synchronous and does network I/O -- it blocks
     the request thread, which is acceptable at this scale (put it behind Celery
-    if that changes)."""
+    if that changes).
+
+    `exclude_request_id` keeps the request being diagnosed out of the evidence
+    retrieved for it -- see PastCaseStore.
+    """
     answer = run(
         query,
         research=get_research_tool(),
-        case_store=DjangoCaseStore(),
+        case_store=PastCaseStore(exclude_request_id),
         model=get_chat_model(),
         safety_floor=settings.CARMED_SAFETY_FLOOR,
     )
@@ -85,7 +89,7 @@ def run_query(query: Query) -> Answer:
 
 
 def run_for_request(diagnostic_request) -> Answer:
-    return run_query(build_query(diagnostic_request))
+    return run_query(build_query(diagnostic_request), exclude_request_id=diagnostic_request.pk)
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +154,7 @@ def _assemble_answer(final_state: State, log) -> Answer:
     )
 
 
-def stream_run(query: Query):
+def stream_run(query: Query, exclude_request_id=None):
     """Run the graph and yield events as each step happens, ending with
     `{"type": "done", "answer": ...}`.
 
@@ -161,7 +165,7 @@ def stream_run(query: Query):
     """
     graph, log = build(
         research=get_research_tool(),
-        case_store=DjangoCaseStore(),
+        case_store=PastCaseStore(exclude_request_id),
         model=get_chat_model(),
         safety_floor=settings.CARMED_SAFETY_FLOOR,
     )

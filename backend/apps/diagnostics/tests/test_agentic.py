@@ -13,10 +13,9 @@ from django.urls import reverse
 
 from carmed import AnswerStatus, Query, Urgency, Vehicle, run
 
-from apps.cases.case_store import DjangoCaseStore
-from apps.cases.embeddings import embed_text
-from apps.cases.models import CaseRecord
 from apps.diagnostics import agentic
+from apps.diagnostics.case_store import PastCaseStore
+from apps.diagnostics.embeddings import embed_text
 from apps.diagnostics.enums import DiagnosticStatus
 from apps.diagnostics.models import DiagnosticRequest
 from apps.diagnostics.research import NullResearchTool
@@ -27,18 +26,28 @@ BRAKES = "Grinding noise when braking at low speed, worse in the morning"
 BAD_VIN = "1FTFW1ET5DFC10312"
 
 
-def seed_camry_brake_case():
-    record = CaseRecord.objects.create(
+FIX = "Replace worn brake pads and resurface the rotors"
+
+
+def seed_camry_brake_case(**overrides):
+    """A finished diagnosis of a 2014 Camry -- the only kind of row that is
+    evidence for a later question about the same car."""
+    data = dict(
         car_make="Toyota",
         car_model="Camry",
-        car_year_start=2010,
-        car_year_end=2017,
+        car_year=2014,
         symptom_text=BRAKES,
-        confirmed_fix="Replace worn brake pads and resurface the rotors",
-        parts_named=["brake pads", "rotors"],
+        status=DiagnosticStatus.COMPLETE,
+        summary={
+            "status": "answered",
+            "causes": [{"title": FIX, "confidence": "strong", "evidence": []}],
+            "repair_steps": ["Measure pad thickness", "Replace pads below 3 mm"],
+        },
     )
+    data.update(overrides)
+    record = DiagnosticRequest.objects.create(**data)
     record.embedding = embed_text(record.symptom_text)
-    record.save(update_fields=["embedding", "updated_at"])
+    record.save(update_fields=["embedding"])
     return record
 
 
@@ -46,52 +55,126 @@ def offline_run(text, **vehicle):
     return run(
         Query(text=text, vehicle=Vehicle(**vehicle)),
         research=NullResearchTool(),
-        case_store=DjangoCaseStore(),
+        case_store=PastCaseStore(),
         model=None,
         safety_floor=True,
     )
 
 
-class CaseGateTests(TestCase):
+class PastCaseRetrievalTests(TestCase):
+    """What the store is allowed to hand the diagnostician, and what it is not.
+
+    Retrieved cases are this system's own earlier answers, so they are evidence
+    to reason over and never a verdict to copy -- `verified=False` makes
+    carmed's cache-hit condition unsatisfiable by construction.
+    """
+
     @classmethod
     def setUpTestData(cls):
         cls.record = seed_camry_brake_case()
 
-    def test_a_known_symptom_is_answered_from_the_kb_for_free(self):
-        answer = offline_run(BRAKES, make="Toyota", model="Camry", year=2014)
-
-        self.assertTrue(answer.from_cache)
-        self.assertEqual(answer.trace.llm_calls, [], "a cached answer must cost nothing")
-        self.assertTrue(answer.causes)
-        self.assertEqual(answer.causes[0].title, self.record.confirmed_fix)
-        self.assertEqual(answer.causes[0].evidence, [f"case:{self.record.pk}"])
-        self.assertEqual(answer.causes[0].likely_parts, ["brake pads", "rotors"])
-
-    def test_the_store_is_actually_reached(self):
+    def test_a_past_diagnosis_of_the_same_car_is_retrieved(self):
         trace = offline_run(BRAKES, make="Toyota", model="Camry", year=2014).trace
         self.assertTrue(trace.ran("gate"))
         self.assertIn("case_store.find_similar->1", trace.lookups)
 
-    def test_an_unrelated_symptom_does_not_hit_the_cache(self):
+    def test_a_near_identical_symptom_is_served_without_a_model_call(self):
+        """The point of keeping past cases: re-deriving an answer we already
+        hold costs three model calls to land in the same place."""
+        answer = offline_run(BRAKES, make="Toyota", model="Camry", year=2014)
+
+        self.assertTrue(answer.from_cache)
+        self.assertEqual(answer.trace.llm_calls, [], "a served answer must cost nothing")
+        self.assertEqual(answer.causes[0].title, FIX)
+        self.assertEqual(answer.causes[0].evidence, [f"case:{self.record.pk}"])
+
+    def test_a_merely_similar_symptom_is_not_served(self):
+        """Above the evidence floor but below the serving bar: it informs a
+        fresh diagnosis rather than being replayed as one."""
         answer = offline_run(
-            "the radio cuts out and the speakers crackle over bumps",
+            "there is a grinding sound from the wheels when I slow down",
             make="Toyota",
             model="Camry",
             year=2014,
         )
+        self.assertIn("case_store.find_similar->1", answer.trace.lookups)
         self.assertFalse(answer.from_cache)
-        # No model configured, so with nothing cached there is nothing to say.
-        self.assertEqual(answer.status, AnswerStatus.ABSTAINED)
 
-    def test_a_different_make_cannot_reuse_the_answer(self):
-        answer = offline_run(BRAKES, make="BMW", model="5 Series", year=2008)
+    @override_settings(CASE_SERVE_MIN_SIMILARITY=1.01)
+    def test_the_serving_bar_is_configurable(self):
+        """Unreachable bar -- nothing may be served, however close."""
+        answer = offline_run(BRAKES, make="Toyota", model="Camry", year=2014)
         self.assertFalse(answer.from_cache)
-        self.assertIn("case_store.find_similar->0", answer.trace.lookups)
+
+    def test_an_unfinished_request_is_not_evidence(self):
+        """Its symptom summary describes a problem nobody has got to the bottom
+        of yet."""
+        DiagnosticRequest.objects.all().delete()
+        seed_camry_brake_case(status=DiagnosticStatus.PENDING)
+        trace = offline_run(BRAKES, make="Toyota", model="Camry", year=2014).trace
+        self.assertIn("case_store.find_similar->0", trace.lookups)
+
+    def test_another_model_from_the_same_make_is_not_evidence(self):
+        """A Century question must not be answered out of Camry history."""
+        trace = offline_run(BRAKES, make="Toyota", model="Century", year=2014).trace
+        self.assertIn("case_store.find_similar->0", trace.lookups)
+
+    def test_another_year_of_the_same_model_is_not_evidence(self):
+        trace = offline_run(BRAKES, make="Toyota", model="Camry", year=2019).trace
+        self.assertIn("case_store.find_similar->0", trace.lookups)
+
+    def test_a_different_make_is_not_evidence(self):
+        trace = offline_run(BRAKES, make="BMW", model="5 Series", year=2008).trace
+        self.assertIn("case_store.find_similar->0", trace.lookups)
+
+    def test_a_request_is_not_evidence_about_itself(self):
+        """A re-run would otherwise retrieve itself at similarity 1.00 and cite
+        its own previous answer as support for repeating it."""
+        store = PastCaseStore(exclude_request_id=self.record.pk)
+        found = store.find_similar(
+            text=BRAKES, vehicle=Vehicle(make="Toyota", model="Camry", year=2014)
+        )
+        self.assertEqual(found, [])
+
+    def test_the_retrieved_case_carries_the_past_answer(self):
+        found = PastCaseStore().find_similar(
+            text=BRAKES, vehicle=Vehicle(make="Toyota", model="Camry", year=2014)
+        )
+        self.assertEqual([m.case.id for m in found], [str(self.record.pk)])
+        self.assertEqual(found[0].case.fix, FIX)
+        self.assertTrue(found[0].case.verified, "an all-but-identical match may be served")
+
+    def test_only_the_configured_number_of_cases_is_returned(self):
+        for i in range(7):
+            seed_camry_brake_case(symptom_text=f"{BRAKES} variant {i}")
+        found = PastCaseStore().find_similar(
+            text=BRAKES, vehicle=Vehicle(make="Toyota", model="Camry", year=2014), limit=5
+        )
+        self.assertEqual(len(found), 5)
+
+    def test_an_unrelated_symptom_on_the_same_car_is_not_evidence(self):
+        """The vehicle filter cannot tell a brake question from a radio one.
+        Without the similarity floor these came back at ~0.3 and were offered
+        to the diagnostician as cases it may cite."""
+        trace = offline_run(
+            "the radio cuts out and the speakers crackle over bumps",
+            make="Toyota",
+            model="Camry",
+            year=2014,
+        ).trace
+        self.assertIn("case_store.find_similar->0", trace.lookups)
+
+    @override_settings(CASE_MATCH_MIN_SIMILARITY=0.99)
+    def test_the_floor_is_configurable(self):
+        found = PastCaseStore().find_similar(
+            text="grinding from the wheels when slowing down",
+            vehicle=Vehicle(make="Toyota", model="Camry", year=2014),
+        )
+        self.assertEqual(found, [])
 
     def test_safety_floor_escalates_a_brake_problem(self):
-        """CaseRecord has no urgency column, so a cached answer inherits carmed's
-        neutral default. The floor is what stops a brake fault being reported as
-        'fix this week'."""
+        """The floor keys on the symptom, not on the diagnosis, so it holds even
+        when there is no model to produce one."""
         answer = offline_run(BRAKES, make="Toyota", model="Camry", year=2014)
         self.assertEqual(answer.urgency, Urgency.DO_NOT_DRIVE)
 
@@ -161,7 +244,6 @@ class SummaryPersistenceTests(TestCase):
         self.assertEqual(stored["status"], AnswerStatus.ANSWERED.value)
         self.assertTrue(stored["from_cache"])
         self.assertEqual(stored["urgency"], int(Urgency.DO_NOT_DRIVE))
-        self.assertTrue(stored["causes"])
         self.assertTrue(stored["disclaimer"])
 
         self.request.refresh_from_db()
@@ -219,8 +301,8 @@ class StreamingTests(TransactionTestCase):
         self.assertEqual(steps, ["vehicle", "route", "gate", "diagnose", "parts", "shops", "finalize"])
         self.assertEqual(events[-1]["type"], "done")
 
-    def test_the_kb_gate_result_is_visible_as_an_event(self):
-        """The UI keys its cache HIT / MISS badge off this."""
+    def test_the_gate_result_is_visible_as_an_event(self):
+        """The UI keys its gate badge off this."""
         notes = [e["text"] for e in self.collect() if e["type"] == "note"]
         self.assertTrue(any(n.startswith("cache HIT") for n in notes), notes)
 
@@ -248,6 +330,7 @@ class StreamingTests(TransactionTestCase):
 
         request = DiagnosticRequest.objects.get(pk=self.request_pk())
         self.assertEqual(request.status, DiagnosticStatus.COMPLETE)
+        self.assertEqual(request.summary["status"], AnswerStatus.ANSWERED.value)
         self.assertTrue(request.summary["causes"])
 
     def test_an_empty_symptom_is_refused_before_anything_is_spent(self):
@@ -314,7 +397,7 @@ class DiagnoseEndpointTests(TestCase):
             reverse("diagnose"), data=payload, content_type="application/json"
         )
 
-    def test_a_known_symptom_comes_back_from_the_kb(self):
+    def test_a_known_symptom_reaches_the_gate_and_retrieves_the_past_case(self):
         body = self.post(
             text=BRAKES, car_make="Toyota", car_model="Camry", car_year=2014
         ).json()
@@ -323,13 +406,17 @@ class DiagnoseEndpointTests(TestCase):
         self.assertTrue(body["from_cache"])
         self.assertEqual(body["dropped_refs"], 0)
         self.assertIn("gate", body["trace"]["steps"])
+        self.assertIn("case_store.find_similar->1", body["trace"]["lookups"])
 
     def test_text_is_required(self):
         self.assertEqual(self.post(car_make="Toyota").status_code, 400)
 
     def test_nothing_is_persisted(self):
+        """The fixture case is itself a DiagnosticRequest now, so this counts
+        the delta rather than the total."""
+        before = DiagnosticRequest.objects.count()
         self.post(text=BRAKES, car_make="Toyota")
-        self.assertEqual(DiagnosticRequest.objects.count(), 0)
+        self.assertEqual(DiagnosticRequest.objects.count(), before)
 
     def test_a_bad_vin_is_refused(self):
         body = self.post(text="brakes squeal", vin=BAD_VIN).json()

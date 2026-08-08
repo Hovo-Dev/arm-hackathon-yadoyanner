@@ -1,7 +1,5 @@
 from rest_framework import serializers
 
-from apps.cases.serializers import CaseRecordSerializer
-
 from .models import (
     DiagnosticCaseMatch,
     DiagnosticImage,
@@ -32,12 +30,32 @@ class DiagnosticRunSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class MatchedRequestSerializer(serializers.ModelSerializer):
+    """The past diagnosis, flattened to what a reader needs to judge whether it
+    is relevant: what that car was doing, and what it turned out to be."""
+
+    fix = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DiagnosticRequest
+        fields = ["id", "car_make", "car_model", "car_year", "symptom_text", "fix", "created_at"]
+        read_only_fields = fields
+
+    def get_fix(self, obj):
+        # Rendered from the stored Answer by the same helper the agentic layer
+        # uses, so the panel and the evidence handed to the diagnostician can
+        # never word the same case differently.
+        from .case_store import _fix_from_summary
+
+        return _fix_from_summary(obj.summary)
+
+
 class DiagnosticCaseMatchSerializer(serializers.ModelSerializer):
-    case = CaseRecordSerializer(read_only=True)
+    matched = MatchedRequestSerializer(read_only=True)
 
     class Meta:
         model = DiagnosticCaseMatch
-        fields = ["id", "case", "confidence", "created_at"]
+        fields = ["id", "matched", "confidence", "created_at"]
         read_only_fields = fields
 
 
