@@ -1,8 +1,8 @@
-"""Text embedding for the Case KB and for RAG queries against it.
+"""Text embedding for symptom text and the similarity search over past cases.
 
 Loaded lazily and cached: the model is only pulled into memory the first time
-something actually needs an embedding (management command, ingestion script,
-API request), not at Django boot or during migrations.
+something actually needs an embedding (an API request, a run), not at Django
+boot or during migrations.
 """
 from functools import lru_cache
 

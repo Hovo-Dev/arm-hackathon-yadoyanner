@@ -10,7 +10,6 @@ def healthz(request):
 
 urlpatterns = [
     path("healthz/", healthz, name="healthz"),
-    path("api/", include("apps.cases.urls")),
     path("api/", include("apps.diagnostics.urls")),
 ]
 

@@ -2,16 +2,17 @@ from django.conf import settings
 from django.db import models
 from pgvector.django import VectorField
 
-from apps.cases.models import CaseRecord
-
 from .enums import DiagnosticImageType, DiagnosticStatus, MessageRole
-from .querysets import DiagnosticMessageQuerySet
+from .querysets import DiagnosticMessageQuerySet, DiagnosticRequestQuerySet
 
 
 class DiagnosticRequest(models.Model):
     """One user session: text/voice description plus any photos, working
-    towards the four-block output in spec section 4. This is the "actual
-    case development" side, separate from the read-only Case KB."""
+    towards the four-block output in spec section 4.
+
+    Doubles as this system's knowledge base: once a request reaches COMPLETE
+    it becomes retrievable evidence for later questions about the same car
+    (see case_store.PastCaseStore)."""
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -25,15 +26,18 @@ class DiagnosticRequest(models.Model):
         blank=True,
         help_text=(
             "Rolling summary of the whole conversation so far, refreshed after every user turn. "
-            "Embedded and matched against CaseRecord.symptom_text -- keeping both fields the same "
-            "shape keeps the two embedding spaces comparable. There is no separate 'original "
-            "text' field: the first turn's content is just this field's first version."
+            "Embedded, and matched against the same field on past completed requests -- one "
+            "field on both sides of the comparison keeps the embedding space coherent. There "
+            "is no separate 'original text' field: the first turn's content is just this "
+            "field's first version."
         ),
     )
     embedding = VectorField(dimensions=settings.EMBEDDING_DIM, null=True, blank=True)
 
     status = models.CharField(max_length=20, choices=DiagnosticStatus.choices, default=DiagnosticStatus.PENDING)
     summary = models.JSONField(null=True, blank=True)
+
+    objects = DiagnosticRequestQuerySet.as_manager()
 
     trace = models.JSONField(
         default=list,
@@ -72,13 +76,22 @@ class DiagnosticRun(models.Model):
 
 
 class DiagnosticCaseMatch(models.Model):
-    """A CaseRecord whose similarity to a DiagnosticRequest's embedding
-    cleared CASE_MATCH_CONFIDENCE_THRESHOLD. Unlike a single best match,
-    several KB cases can independently score above the bar, so this is a
-    row per (request, case) pair rather than a field on DiagnosticRequest."""
+    """A past COMPLETE diagnosis of the same car whose similarity to this
+    request's embedding cleared CASE_MATCH_MIN_SIMILARITY.
+
+    Both sides are DiagnosticRequests now: the Case KB was removed, and what
+    this system knows about a car is the set of diagnoses it has finished for
+    it. Unlike a single best match, several past cases can independently score
+    above the bar, so this is a row per (request, matched) pair rather than a
+    field on DiagnosticRequest."""
 
     request = models.ForeignKey(DiagnosticRequest, on_delete=models.CASCADE, related_name="case_matches")
-    case = models.ForeignKey(CaseRecord, on_delete=models.CASCADE, related_name="diagnostic_matches")
+    matched = models.ForeignKey(
+        DiagnosticRequest,
+        on_delete=models.CASCADE,
+        related_name="matched_by",
+        help_text="The earlier, completed request this one resembles.",
+    )
     confidence = models.FloatField()
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -86,11 +99,19 @@ class DiagnosticCaseMatch(models.Model):
     class Meta:
         ordering = ["-confidence"]
         constraints = [
-            models.UniqueConstraint(fields=["request", "case"], name="unique_diagnostic_case_match"),
+            models.UniqueConstraint(fields=["request", "matched"], name="unique_diagnostic_case_match"),
+            # A request is not evidence about itself; the store excludes it, and
+            # this makes that unrepresentable rather than merely unlikely.
+            # `check=`, not `condition=`: this is Django 5.0, where the rename
+            # has not landed yet.
+            models.CheckConstraint(
+                check=~models.Q(request=models.F("matched")),
+                name="diagnostic_match_is_not_self",
+            ),
         ]
 
     def __str__(self):
-        return f"case #{self.case_id} matched to request #{self.request_id} ({self.confidence:.2f})"
+        return f"request #{self.matched_id} matched to #{self.request_id} ({self.confidence:.2f})"
 
 
 class DiagnosticMessage(models.Model):

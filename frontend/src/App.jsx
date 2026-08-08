@@ -821,11 +821,17 @@ export default function App() {
 
             {active.case_matches.length > 0 && (
               <div className="match-card">
-                <div className="match-title">Similar cases found in the knowledge base</div>
+                <div className="match-title">
+                  Past diagnoses of this car the assistant is working from
+                </div>
                 {active.case_matches.map((m) => (
                   <div key={m.id} className="match-row">
-                    <span className="confidence">{Math.round(m.confidence * 100)}%</span> — {m.case.symptom_text} →{" "}
-                    {m.case.confirmed_fix}
+                    <span className="confidence">{Math.round(m.confidence * 100)}%</span> —{" "}
+                    {m.matched.symptom_text}
+                    {/* A past case with no recorded outcome is still worth
+                        showing -- it is the same car with the same symptom --
+                        but it must not render as an arrow pointing at nothing. */}
+                    {m.matched.fix && <> → {m.matched.fix}</>}
                   </div>
                 ))}
               </div>
