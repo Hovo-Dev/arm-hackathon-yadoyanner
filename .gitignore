@@ -1,5 +1,15 @@
 .env
+*.env
 .venv/
 __pycache__/
 *.pyc
 .idea/
+.DS_Store
+
+# Django
+backend/media/
+backend/staticfiles/
+db.sqlite3
+
+# Fetched on demand and rebuilt automatically (turn.am categories, workshops)
+data/cache/

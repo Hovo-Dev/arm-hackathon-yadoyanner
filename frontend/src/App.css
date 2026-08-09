@@ -1,0 +1,1280 @@
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100vh;
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wordmark {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.wordmark .accent-text {
+  color: var(--accent);
+}
+
+.new-chat-btn {
+  margin: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.new-chat-btn:hover {
+  filter: brightness(1.05);
+}
+
+.req-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.req-entry {
+  margin-bottom: 2px;
+}
+
+.req-list-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 8px 8px 4px;
+}
+
+.req-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.req-item:hover {
+  background: var(--panel);
+}
+
+.req-item.active {
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.req-item .title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The only control that opens the pipeline steps. */
+/* Reads as a label, not a control, until you go near it -- so a list of
+   fifteen rows is fifteen facts rather than fifteen buttons. */
+.req-trace {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10.5px;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.req-item:hover .req-trace {
+  background: var(--border);
+  color: var(--text);
+}
+
+.req-trace.open {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.req-trace:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Shared disclosure arrow, used by the answer-provenance panel. */
+.chev {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  transition: transform 0.18s ease;
+}
+
+/* Hidden until the row is hovered or the button itself is focused: a delete
+   control on every row of a list is an easy misclick, and this one is not
+   undoable. */
+.req-del {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.req-item:hover .req-del,
+.req-del:focus-visible {
+  opacity: 1;
+}
+
+.req-del:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot.pending {
+  background: var(--muted);
+}
+.dot.case_matched {
+  background: var(--accent);
+}
+.dot.researching {
+  background: #d97706;
+}
+.dot.complete {
+  background: #16a34a;
+}
+
+.hint {
+  color: var(--muted);
+  padding: 0 10px;
+}
+
+/* ---------- main / empty (new diagnosis) ---------- */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.welcome-card {
+  width: 100%;
+  max-width: 440px;
+  text-align: center;
+}
+
+.welcome-card .logo-badge {
+  margin: 0 auto 14px;
+}
+
+.welcome-card h1 {
+  font-size: 24px;
+  margin: 0 0 4px;
+}
+
+.welcome-card .tagline {
+  color: var(--muted);
+  margin: 0 0 24px;
+  font-size: 14px;
+}
+
+.welcome-form {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+
+.welcome-form .row {
+  display: flex;
+  gap: 8px;
+}
+
+.welcome-form .row > * {
+  flex: 1;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 10px;
+  margin-bottom: 3px;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+
+.primary-btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.primary-btn:hover {
+  filter: brightness(1.05);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- chat header ---------- */
+
+.header-bar {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--panel);
+}
+
+.header-bar .vehicle {
+  font-weight: 600;
+  flex: 1;
+}
+
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.pill.pending {
+  background: var(--sidebar-bg);
+  color: var(--muted);
+  border-color: var(--border);
+}
+.pill.case_matched {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+.pill.researching {
+  background: rgba(217, 119, 6, 0.15);
+  color: #d97706;
+}
+.pill.complete {
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.icon-btn:hover {
+  background: var(--sidebar-bg);
+}
+
+.attach-select {
+  width: auto;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+/* ---------- images / matches ---------- */
+
+.images {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.images img {
+  height: 56px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.match-card {
+  margin: 14px auto 0;
+  max-width: 720px;
+  width: calc(100% - 40px);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+}
+
+.match-card .match-title {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.match-row {
+  padding: 3px 0;
+  color: var(--fg);
+}
+
+.match-row .confidence {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* ---------- messages ---------- */
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.messages-inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.message-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* One child, reversed axis -- the bubble sits against the right edge. */
+.message-row.user {
+  flex-direction: row-reverse;
+}
+
+.bubble {
+  max-width: 68%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  box-shadow: var(--shadow);
+}
+
+.bubble.user {
+  background: var(--user-bubble);
+  color: var(--user-bubble-fg);
+  border-bottom-right-radius: 4px;
+}
+
+.bubble.assistant {
+  background: var(--assistant-bubble);
+  color: var(--assistant-bubble-fg);
+  border-bottom-left-radius: 4px;
+}
+
+/* ---------- composer ---------- */
+
+.composer-wrap {
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  padding: 14px 20px;
+}
+
+.composer {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 6px 6px 16px;
+}
+
+.composer textarea {
+  border: none;
+  background: transparent;
+  padding: 8px 0;
+  min-height: 24px;
+  max-height: 140px;
+}
+
+.composer textarea:focus {
+  outline: none;
+}
+
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.empty {
+  color: var(--muted);
+  padding: 24px;
+  text-align: center;
+  margin: auto;
+}
+
+/* ---------- agentic pipeline visibility ---------- */
+
+/* Expands inline under its history record. The sidebar list is what scrolls,
+   so this just takes the height it needs. */
+.pipeline {
+  margin: 4px 0 8px 10px;
+  padding: 10px 10px 10px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--panel);
+  border-radius: 0 8px 8px 0;
+}
+
+.pipeline-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pipeline-title {
+  font-weight: 700;
+  font-size: 12px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipeline-sub {
+  color: var(--muted);
+  font-size: 11px;
+  margin: -4px 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stage {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  transition: border-color 0.2s, opacity 0.2s;
+}
+
+.stage.idle { opacity: 0.45; }
+.stage.skipped { opacity: 0.3; border-style: dashed; }
+.stage.done { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.stage.running {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+
+.stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.stage-detail {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.stage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  background: var(--border);
+}
+
+.stage-dot.done { background: var(--accent); }
+.stage-dot.running {
+  background: var(--accent);
+  animation: stage-pulse 1s ease-in-out infinite;
+}
+
+@keyframes stage-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+
+.stage-label {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Everything the "..." reveals, stacked one under another. */
+.pipeline-details {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Spacing between the revealed blocks comes from .pipeline-details' gap, so
+   these carry no margin of their own. */
+
+.story {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.story li::marker { color: var(--accent); }
+
+/* The run as it happens: what step is going, what it found, and each cause
+   the moment the model finishes writing it. Deliberately flatter than the
+   answer card -- nothing in here is verified yet. */
+/* No card. This is the assistant thinking out loud, not a separate object in
+   the transcript -- a border around it makes the reasoning look like another
+   answer competing with the real one. Spacing does the separating. */
+.live {
+  border: 0;
+  background: transparent;
+  padding: 2px 0 6px;
+}
+
+.live-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.live-title { flex: none; }
+
+/* Pushed to the right so the row reads "what it is ......... how much of it". */
+.live-summary {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+.live-chevron { color: var(--muted); }
+
+.live.open .live-chevron { transform: rotate(90deg); }
+
+/* Once the answer has landed this is a provenance record, not the main event.
+   It recedes, but it stays. */
+/* Sentence case, not shouted. It is a quiet label on the assistant's own
+   working, and small caps made it compete with the answer above it. */
+.live.settled .live-head {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.live.settled .live-head:hover {
+  color: var(--text);
+}
+
+.live-head:hover .live-chevron { color: var(--text); }
+
+/* Collapsed, the border would draw a box around a single row of text. */
+.live-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chev { transition: none; }
+}
+
+.live-story {
+  margin: 0;
+  padding: 6px 0 4px 2px;
+  list-style: none;
+}
+
+.live-story li {
+  position: relative;
+  display: flex;
+  gap: 9px;
+  padding-bottom: 11px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  animation: live-in 0.25s ease-out;
+}
+
+.live-story li:last-child { padding-bottom: 0; }
+
+/* The thread between one step and the next. Drawn from the icon's centre
+   down to the following icon, so the column reads as one sequence rather
+   than a stack of unrelated lines. */
+.live-story li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 17px;
+  bottom: 1px;
+  width: 1px;
+  background: var(--border);
+}
+
+.step-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--border);
+}
+
+.step-text { min-width: 0; }
+
+/* The newest line is the one still happening. */
+.live-story li.fresh { color: var(--text); }
+.live-story li.fresh .step-icon { color: var(--accent); }
+
+.live-story li.step-done { color: var(--text); }
+.live-story li.step-done .step-icon { color: var(--accent); }
+
+/* Separated by space, not by a rule. */
+.live-block {
+  margin-top: 10px;
+  padding-bottom: 4px;
+}
+
+.live-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 6px 2px;
+}
+
+.live-part {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  animation: live-in 0.25s ease-out;
+}
+
+.live-count {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.live-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 6px 2px;
+}
+
+/* Retrieved, and not yet standing for anything -- muted until a cause points
+   at it, so "read 6 sources" can never be mistaken for "cited 6 sources". */
+.live-source {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.live-source:hover { text-decoration: underline; }
+
+.live-source.cited {
+  color: var(--text);
+}
+
+.live-source-kind {
+  flex: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.live-source.cited .live-source-kind {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.appearing { animation: live-in 0.25s ease-out; }
+
+@keyframes live-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-story li,
+  .live-part,
+  .live-source,
+  .appearing { animation: none; }
+}
+
+.pending-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.pending-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pending-bounce 1.1s ease-in-out infinite;
+}
+
+.pending-dots i:nth-child(2) { animation-delay: 0.15s; }
+.pending-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes pending-bounce {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-dots i { animation: none; opacity: 0.6; }
+}
+
+.run-error {
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+/* ---------- final answer ---------- */
+
+.answer-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 0 0 12px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+/* Superseded answers stay readable but stop competing with the current one. */
+.answer-card.earlier {
+  box-shadow: none;
+  background: transparent;
+}
+
+.answer-when {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.urgency-banner {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.urgency-banner strong { font-size: 13px; letter-spacing: 0.2px; }
+.urgency-banner span { opacity: 0.85; }
+.urgency-banner.u0 { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
+.urgency-banner.u1 { background: rgba(217, 119, 6, 0.15); color: #d97706; }
+.urgency-banner.u2 { background: rgba(234, 88, 12, 0.18); color: #ea580c; }
+.urgency-banner.u3 { background: rgba(220, 38, 38, 0.16); color: #dc2626; }
+
+
+.answer-section {
+  padding: 14px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cause { padding: 4px 16px 10px; }
+
+.cause-title {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.conf {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--sidebar-bg);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.conf.strong { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.cause-why { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.evidence { margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap; }
+
+.ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.steps { margin: 0; padding: 0 16px 0 34px; font-size: 13px; }
+.steps li { margin-bottom: 4px; }
+
+/* --- What to buy ------------------------------------------------------ */
+
+.part { padding: 2px 16px 8px; }
+
+.part-name { font-size: 13px; font-weight: 600; }
+.part-nums { font-weight: 400; color: var(--muted); font-size: 11px; }
+.part-aliases { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.listings { margin: 5px 0 0; padding: 0; list-style: none; }
+
+.listings li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.listings li:last-child { border-bottom: 0; }
+.listings a { flex: 1; color: inherit; text-decoration: none; }
+.listings a:hover { text-decoration: underline; }
+
+/* Price is the number people scan for, so it is the one thing set in a
+   monospace face and given weight. "ask seller" uses the muted colour: an
+   unopened listing must not read like a cheap one. */
+.price {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.listings li .price:not(:empty) { color: var(--accent); }
+.cond { font-size: 10px; color: var(--muted); text-transform: lowercase; }
+
+/* --- fitment ----------------------------------------------------------- */
+
+.fitment { padding: 4px 16px 8px; display: grid; gap: 4px; }
+
+.fit-check, .fit-block {
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border-left: 3px solid;
+}
+
+.fit-check {
+  background: rgba(234, 88, 12, 0.10);
+  border-color: #ea580c;
+  color: #ea580c;
+}
+
+/* Blocking means the part is known not to fit, so it reads like the refusal
+   it is rather than like advice. */
+.fit-block {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: #dc2626;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* --- Who to call ------------------------------------------------------- */
+
+.shops { margin: 0; padding: 0 16px; list-style: none; }
+
+.shops li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.shops li:last-child { border-bottom: 0; }
+.shop-name { font-weight: 600; }
+
+.shop-phone {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.shop-phone:hover { text-decoration: underline; }
+.shop-area { color: var(--muted); flex: 1 1 100%; font-size: 11px; }
+
+.answer-foot {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px 16px 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.answer-foot .ok { color: var(--accent); }
+.answer-foot .bad { color: #dc2626; font-weight: 700; }
+.answer-foot .disclaimer { font-family: inherit; flex: 1 1 100%; opacity: 0.7; }
+
+.primary-btn.compact { padding: 7px 14px; font-size: 12px; width: auto; margin: 0; }
+
+.story {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--fg);
+}
+
+.story li { margin-bottom: 3px; }
+.story li::marker { color: var(--accent); }
+
+.evidence-label {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.ref {
+  font-family: inherit;
+  font-size: 10.5px;
+}
+
+/* Deliberately plainer than a citation. A cause the sources don't cover is
+   still worth showing, but it must not borrow the look of one they do. */
+.evidence.unsourced .ref.muted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Confirm dialog
+   --------------------------------------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+  animation: modal-fade 0.14s ease-out;
+}
+
+.modal {
+  width: 100%;
+  max-width: 380px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.22);
+  animation: modal-rise 0.16s ease-out;
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 650;
+  margin-bottom: 7px;
+}
+
+.modal-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.modal-btn {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.modal-btn:hover { background: var(--border); }
+
+.modal-btn.danger {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+}
+
+.modal-btn.danger:hover { background: #b91c1c; border-color: #b91c1c; }
+
+.modal-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop, .modal { animation: none; }
+}
+
+/* Sources inside the sidebar's expanded steps. Links, not counts: "10 sources"
+   is not something the reader can check. */
+.src-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.src-head {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.src-head span { font-weight: 400; }
+
+.src {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: none;
+  min-width: 0;
+}
+
+.src:hover { color: var(--text); }
+.src:hover .src-title { text-decoration: underline; }
+
+.src-kind {
+  flex: none;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.src-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------------------
+   Collapse / expand
+   --------------------------------------------------------------------------- */
+
+/* Animates to the content's natural height, which max-height cannot do without
+   guessing a number that is either too small (content clipped) or too large
+   (the transition spends most of its time on empty space). The 0fr -> 1fr grid
+   row does it exactly. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s cubic-bezier(0.32, 0.72, 0, 1),
+              opacity 0.18s ease;
+  opacity: 0;
+}
+
+.collapse.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+/* Both are required: the child must be allowed to be shorter than its content
+   (min-height) and must hide the overflow while it is. */
+.collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapse { transition: none; }
+}
+
+/* The live panel has no card padding to sit inside, so its section headings
+   and causes align to the transcript's own left edge instead. */
+.live .answer-section { padding: 6px 0 4px 2px; }
+.live .cause { padding: 4px 0 10px 2px; }
