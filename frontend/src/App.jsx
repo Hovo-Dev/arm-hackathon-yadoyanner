@@ -8,7 +8,7 @@ const STATUS_LABEL = {
   complete: "Complete",
 };
 
-const EMPTY_FORM = { car_make: "", car_model: "", car_year: "", raw_text: "" };
+const EMPTY_FORM = { car_make: "", car_model: "", car_year: "", vin: "", raw_text: "" };
 
 // The seven stages of the agentic graph, in the order they can run. `agent`
 // marks the three that cost a model call -- everything else is deterministic
@@ -628,8 +628,23 @@ function AnswerCard({ answer, latest = true, at }) {
 // it would be a second answer to the same question. Checking only for causes
 // and steps was not enough: a needs_clarification run still returns
 // repair_steps, so five of them were rendering a bubble *and* a card.
+// Does this run have anything structured to show, regardless of what it also
+// said in prose?
+//
+// This used to be "has no message", on the assumption that a message meant a
+// clarifying question and a clarifying question meant nothing else was found.
+// Both halves are now false: a run can name three cited causes, price the
+// parts, list a workshop, and still ask one question to narrow it further --
+// and the old test threw all of that away at render time because the question
+// existed.
 function hasCard(answer) {
-  return !(answer?.message || "").trim();
+  if (!answer) return false;
+  return Boolean(
+    answer.causes?.length ||
+      answer.repair_steps?.length ||
+      answer.parts?.options?.length ||
+      answer.shops?.length
+  );
 }
 
 // One chronological list of what the user asked and what each run answered.
@@ -895,6 +910,9 @@ export default function App() {
         car_make: form.car_make,
         car_model: form.car_model,
         car_year: form.car_year ? Number(form.car_year) : null,
+        // Optional: when present, vPIC decodes factory engine/trim so parts
+        // and NHTSA lookups target the exact build instead of a guess.
+        vin: form.vin.trim().toUpperCase() || "",
         raw_text: form.raw_text,
       };
       const req = await api("/api/diagnostics/", {
@@ -1078,11 +1096,39 @@ export default function App() {
                     />
                   </div>
                 </div>
+                <label>
+                  VIN <span style={{ fontWeight: 400 }}>(optional)</span>
+                </label>
+                <input
+                  value={form.vin}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      vin: e.target.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/gi, "").slice(0, 17),
+                    })
+                  }
+                  placeholder="1N4AL3AP7FC123456"
+                  maxLength={17}
+                  autoComplete="off"
+                  spellCheck={false}
+                  title="Improves diagnosis: exact engine and trim from the factory catalogue"
+                />
                 <label>What's going on?</label>
+                {/* Enter submits, shift+enter breaks the line -- the same deal
+                    the chat composer makes. The other fields already submit on
+                    enter because this is a real form; a textarea is the one
+                    control where the browser keeps the newline, and it is the
+                    field people are actually typing in. */}
                 <textarea
                   required
                   value={form.raw_text}
                   onChange={(e) => setForm({ ...form, raw_text: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !creating && form.raw_text.trim()) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
                   placeholder="Grinding noise when braking at low speed..."
                 />
                 <button
@@ -1103,6 +1149,18 @@ export default function App() {
               <LogoMark size={22} />
               <span className="vehicle">
                 {active.car_make} {active.car_model} {active.car_year || ""}
+                {active.vin ? (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      opacity: 0.7,
+                      fontSize: "0.85em",
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    }}
+                  >
+                    · {active.vin}
+                  </span>
+                ) : null}
               </span>
               <span className={`pill ${active.status}`}>{STATUS_LABEL[active.status] || active.status}</span>
 

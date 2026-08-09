@@ -533,7 +533,15 @@ def _after_route(state: State) -> str:
 
 def _after_diagnose(state: State) -> str:
     d = state.diagnosis
-    if d is None or d.abstain or d.clarifying_question:
+    # Gated on whether there are causes, not on whether a question was asked.
+    # Those used to be the same thing: a clarifying question meant the model
+    # had nothing. Since the prompt started allowing "here are the causes I
+    # can name, and one thing would narrow it further", they are not -- and
+    # measured over nine runs, seven ended needing clarification and every one
+    # of those had three cited causes. Skipping parts and shops there threw
+    # away work already paid for and made the owner ask for what the run had
+    # already found.
+    if d is None or d.abstain or not d.causes:
         return "finalize"
     needs = NEEDS[state.intent]
     if "parts" in needs:

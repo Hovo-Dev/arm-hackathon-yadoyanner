@@ -5,6 +5,7 @@ Loaded lazily and cached, same as apps.cases.embeddings: the client is only
 constructed the first time something actually needs to talk to the LLM.
 """
 import logging
+import re
 from functools import lru_cache
 
 from django.conf import settings
@@ -45,6 +46,14 @@ def complete(messages, *, reasoning: bool = False) -> str:
         model=settings.OPENROUTER_MODEL,
         messages=messages,
         stream=False,
+        # Every call through here is a transformation of text the caller
+        # already has -- translate this, summarize that -- so sampling buys
+        # nothing and costs correctness. Left unset it inherited the provider
+        # default (~1.0), which is how a request to translate "is the squealing
+        # constant while braking" came back as a fluent Armenian sentence about
+        # valves, scale and a battery. carmed's own agents have always set this;
+        # this path was simply missed.
+        temperature=0,
         extra_body={} if reasoning else {"reasoning": {"enabled": False}},
     )
     return (completion.choices[0].message.content or "").strip()
@@ -158,9 +167,19 @@ def summarize_symptom(transcript: str) -> str:
 # The same glossary as above, used in the other direction. Written once and
 # read twice on purpose: the words the owner types are exactly the words the
 # reply should come back in, and two lists would drift.
+#
+# Armenian script rather than Latin transliteration, from an A/B on the same
+# eight replies. Latin came back readable but with invented words the glossary
+# had not covered ("chherqakan", "votchntchacrel", "Poqi komplekt"). Script
+# came back in spoken Armenian -- the loanwords drivers use in their own
+# alphabet, the colloquial copula, and the Armenian question mark placed
+# correctly inside the word. Script also gets the failure mode we can actually
+# detect: a reply in the wrong alphabet is a codepoint count, while a Latin
+# word that does not exist is not checkable at all.
 _REPLY_SYSTEM_PROMPT = (
-    "Rewrite the assistant's reply in Armenian written with LATIN letters -- "
-    "the way Armenians type on a Latin keyboard, not Armenian script and not "
+    "Rewrite the assistant's reply in Armenian, written in the ARMENIAN "
+    "ALPHABET (Հայերեն տառերով). Never answer in Latin letters.\n\n"
+    "Use everyday spoken Armenian, the way a driver in Yerevan talks -- not "
     "formal literary Armenian.\n\n"
     "Rules, in order:\n"
     "1. Keep every number exactly as written: prices, years, part numbers, "
@@ -168,15 +187,101 @@ _REPLY_SYSTEM_PROMPT = (
     "2. Keep the meaning. Do not add advice, do not drop a caveat, do not "
     "make a hedged statement sound certain.\n"
     "3. Use the everyday words drivers here actually use -- mostly Russian "
-    "loanwords -- not invented literary equivalents:\n"
+    "loanwords, spelled in Armenian letters (տոսոլ, կալոդկա, տորմոզ, "
+    "կարոբկա, մատոր) -- not invented literary equivalents:\n"
     f"   {_TRANSLITERATION_GLOSSARY}\n"
     "4. If a term has no everyday Armenian form, leave the English word.\n"
     "5. Reply with the rewritten text only. No quotes, no notes, no original."
 )
 
+_ARMENIAN_CHARS = re.compile(r"[\u0530-\u058F\uFB13-\uFB17]")
+_LATIN_CHARS = re.compile(r"[A-Za-z]")
 
-def to_latin_armenian(text: str) -> str:
-    """English reply -> the Latin-script Armenian the owner reads.
+#: Below this the model ignored the alphabet instruction. Not 1.0: part
+#: numbers, "AMD" and untranslatable English terms are Latin on purpose.
+_MIN_ARMENIAN = 0.6
+
+
+def _armenian_share(text: str) -> float:
+    armenian = len(_ARMENIAN_CHARS.findall(text))
+    latin = len(_LATIN_CHARS.findall(text))
+    total = armenian + latin
+    return armenian / total if total else 0.0
+
+
+#: Latin-script Armenian markers. Every one of these is either a word that
+#: does not exist in English, or a Russian loanword no English car complaint
+#: would use. Words the two languages share are deliberately absent -- an
+#: English owner writing "the radiator is leaking" must not be answered in
+#: Armenian, so "radiator", "generator", "starter" and "termostat" are all
+#: excluded even though they are in the glossary above.
+#:
+#: One hit is enough. Someone typing Latin-script Armenian reaches for these
+#: constantly; someone typing English never reaches for them at all.
+_LATIN_ARMENIAN_MARKERS = frozenset("""
+matory motory sharzhich dvigatel ercnum ercnuma eruma peregrev antifriz tosol
+argelak argelaknery tormoz tormoza tormozner kalodka kolodka kalodkanery
+crrum crrua skripit karobka karobki korobka kpp mexanika avtomat akpp
+pervi pervaya vtoroy vaxt peredacha sceplenie kcordich
+dzayn dzena dzayner anvahec podshipnik anvadog shina rezin amortizator stoyka
+akumlyator akumulyator svecha takic snizu katacel techet trcum dergaetsya
+aravot utrom chi che chka varvum zavoditsya inch incha anem anum exa exav
+vonc vor bayc erb miayn noric enq eiq petqa petq karam uzum lyuft suloc
+poshi meqenan mashinan yuxi yuxa yughi makardak stugel poxel gnum galis linum
+litr kilometry pizdec varum
+""".split())
+
+#: The complementary signal. English car complaints are full of these; Latin
+#: -script Armenian contains none of them, because they are English grammar
+#: rather than English vocabulary. Single letters are excluded on purpose --
+#: "a" is the Armenian copula ("dzayn a talis") and would fire on every line.
+#:
+#: This exists so the marker list above does not have to grow forever. It
+#: catches what the markers miss: "Yuxa varum pizdec 1000 kilometry 1 litr"
+#: hits no marker but contains no English either.
+_ENGLISH_STOPWORDS = frozenset("""
+the and or but is are was were be been being has have had does do did
+when while after before if then than that this these those there here
+my your his her its our their me you it him them
+on at in to of for from with without into over under
+only not no very more most some any all both each
+car engine noise when make model year problem issue sound
+""".split())
+
+
+_WORD = re.compile(r"[a-z]+")
+
+
+def looks_armenian(text: str) -> bool:
+    """Should the reply come back in Armenian?
+
+    Three inputs have to be told apart and only two of them are visible to an
+    alphabet counter. Armenian script is obvious. English is obvious. Latin
+    -script Armenian -- "karobki pervi vaxt dzena galis" -- is Latin letters
+    and reads as English to `carmed.text.detect_lang`, which is documented
+    there as a known gap.
+
+    So this looks at vocabulary rather than alphabet, against words English
+    does not have. Deliberately not a model call: this decision runs on every
+    answer, and it is a lookup.
+    """
+    body = (text or "").strip()
+    if not body:
+        return False
+    if _ARMENIAN_CHARS.search(body):
+        return True
+
+    words = _WORD.findall(body.lower())
+    if _LATIN_ARMENIAN_MARKERS & set(words):
+        return True
+
+    # Nothing Armenian recognised, but nothing English either. Short inputs
+    # are excluded: two words is not enough absence to conclude anything.
+    return len(words) >= 3 and not (_ENGLISH_STOPWORDS & set(words))
+
+
+def to_armenian(text: str) -> str:
+    """English reply -> the Armenian the owner reads.
 
     Display only, and deliberately the last thing that happens. Everything the
     system reasons with, stores and matches on stays English: `summary` feeds
@@ -187,25 +292,45 @@ def to_latin_armenian(text: str) -> str:
     Armenian, the diagnostician does the reasoning and the wording in one pass,
     so a bad word choice and a bad diagnosis become the same failure. Asked to
     *translate* a finished English answer, only the wording can go wrong -- and
-    measured, the facts survive: prices, part numbers and units came through
-    verbatim, while the register needed the glossary above (unprompted the
-    model reached for invented forms like "pordzatuphi yugh" instead of
-    "karobkayi yugh").
+    measured, the facts survive: prices and part numbers came through verbatim.
 
-    Returns the English unchanged on any failure. A reply in the wrong language
-    is a far smaller problem than no reply.
+    Retried once when the answer comes back in the wrong alphabet, which
+    measured at 3 in 10 even with the instruction written in Armenian script.
+    The retry is worth having precisely because this failure is countable --
+    the whole reason for preferring script over transliteration.
+
+    Never falls back to English on a bad alphabet: a reply in transliterated
+    Armenian still reads to the owner, and English does not. English comes
+    back only when the call itself failed.
     """
     body = (text or "").strip()
     if not body:
         return text
-    try:
-        out = complete(
-            [
-                {"role": "system", "content": _REPLY_SYSTEM_PROMPT},
-                {"role": "user", "content": body},
-            ]
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Reply translation failed (%s) -- sending English.", exc)
-        return text
-    return out.strip() or text
+
+    best = ""
+    for attempt in range(2):
+        messages = [
+            {"role": "system", "content": _REPLY_SYSTEM_PROMPT},
+            {"role": "user", "content": body},
+        ]
+        if attempt:
+            messages.insert(1, {
+                "role": "system",
+                "content": ("The previous attempt used Latin letters. Answer "
+                            "ONLY in the Armenian alphabet this time."),
+            })
+        try:
+            out = complete(messages).strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Reply translation failed (%s) -- sending English.", exc)
+            return best or text
+        if not out:
+            continue
+        if _armenian_share(out) >= _MIN_ARMENIAN:
+            return out
+        # Keep the fuller attempt rather than the last one.
+        if _armenian_share(out) > _armenian_share(best):
+            best = out
+        logger.info("Reply came back in Latin script (attempt %d) -- retrying.", attempt + 1)
+
+    return best or text

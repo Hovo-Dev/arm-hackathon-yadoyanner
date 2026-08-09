@@ -250,6 +250,24 @@ class ArmenianResearch:
     def search_listings(
         self, *, part_terms: list[str], vehicle: Vehicle, limit: int = 20
     ) -> list[PartListing]:
+        # The budget is checked here, not merely counted. It was counted and
+        # never read, which is worth more than a one-line fix: the prompt says
+        # "two searches maximum", and against that a single run made eighteen
+        # tool calls -- brake rotors, pads, tie rod ends, ball joints, control
+        # arm bushings, calipers, then the same list again in Russian, then
+        # again with the model name appended. Roughly thirty-six searches for
+        # one question, on a metered API.
+        #
+        # Returning empty is the signal the model already understands: it reads
+        # as "nothing for sale", which ends the search rather than provoking
+        # another spelling. Saying "budget exhausted" would invite retries.
+        if self._calls_used >= self.REQUEST_CALL_BUDGET:
+            log.info(
+                "Listing search budget spent (%d calls) -- not searching for %s.",
+                self._calls_used, ", ".join(part_terms[:2]) or "?",
+            )
+            return []
+
         ctx = _ctx(vehicle)
         seen: set[str] = set()
         candidates: list[tuple[float, object]] = []
