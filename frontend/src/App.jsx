@@ -832,6 +832,23 @@ export default function App() {
     await loadRequests();
   };
 
+  // Explicit COMPLETE for the case gate. Pipeline runs still auto-complete on
+  // a terminal answer; this is for when the owner accepts without another run.
+  const [resolving, setResolving] = useState(false);
+  const resolveRequest = async () => {
+    if (!activeId || resolving || active?.status === "complete") return;
+    setResolving(true);
+    try {
+      const data = await api(`/api/diagnostics/${activeId}/resolve/`, { method: "POST" });
+      setActive(data);
+      await loadRequests();
+    } catch (err) {
+      alert(err.message || "Could not resolve");
+    } finally {
+      setResolving(false);
+    }
+  };
+
   const toggleSteps = (id) =>
     setOpenSteps((prev) => {
       const next = new Set(prev);
@@ -1164,14 +1181,30 @@ export default function App() {
               </span>
               <span className={`pill ${active.status}`}>{STATUS_LABEL[active.status] || active.status}</span>
 
-              <button
-                className="primary-btn compact"
-                onClick={() => runPipeline(activeId)}
-                disabled={activeRun.running}
-                title="Re-run the agentic pipeline over the conversation so far"
-              >
-                {activeRun.running ? "Running…" : "Run diagnosis"}
-              </button>
+              <div className="header-actions">
+                {active.status !== "complete" && (
+                  <button
+                    className="secondary-btn compact"
+                    onClick={resolveRequest}
+                    disabled={resolving || activeRun.running || !active.summary}
+                    title={
+                      active.summary
+                        ? "Mark done — saves this diagnosis into the case history for later matches"
+                        : "Run a diagnosis first"
+                    }
+                  >
+                    {resolving ? "Resolving…" : "Resolve"}
+                  </button>
+                )}
+                <button
+                  className="primary-btn compact"
+                  onClick={() => runPipeline(activeId)}
+                  disabled={activeRun.running}
+                  title="Re-run the agentic pipeline over the conversation so far"
+                >
+                  {activeRun.running ? "Running…" : "Run diagnosis"}
+                </button>
+              </div>
             </div>
 
             {active.case_matches.length > 0 && (

@@ -6,6 +6,7 @@ from .views import (
     DiagnosticImageViewSet,
     DiagnosticMessageViewSet,
     DiagnosticRequestViewSet,
+    DiagnosticResolveView,
     DiagnosticRunStreamView,
     DiagnosticTurnView,
 )
@@ -21,6 +22,11 @@ urlpatterns = [
         "diagnostics/<int:request_id>/run/stream/",
         DiagnosticRunStreamView.as_view(),
         name="diagnostic-run-stream",
+    ),
+    path(
+        "diagnostics/<int:request_id>/resolve/",
+        DiagnosticResolveView.as_view(),
+        name="diagnostic-resolve",
     ),
     path(
         "diagnostics/<int:request_id>/turns/",

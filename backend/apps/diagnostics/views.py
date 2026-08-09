@@ -80,7 +80,6 @@ class DiagnosticRequestViewSet(viewsets.ModelViewSet):
         instance.save(update_fields=["summary", "status", "updated_at"])
         return response.Response(self.get_serializer(instance).data)
 
-
 class DiagnoseView(views.APIView):
     """Stateless one-shot run of the agentic layer: text plus car in, a full
     Answer out, nothing written to the database.
@@ -106,6 +105,46 @@ class DiagnoseView(views.APIView):
             city=data["city"] or settings.CARMED_DEFAULT_CITY,
         )
         return response.Response(run_query(query).model_dump(mode="json"))
+
+
+class DiagnosticResolveView(views.APIView):
+    """Mark a request COMPLETE without re-running the pipeline.
+
+    Separate from `run/stream/`: the stream still auto-completes when the
+    graph returns a terminal answer (ANSWERED / ABSTAINED / refused VIN).
+    This endpoint is the explicit owner accept — e.g. after clarifying turns
+    — so the case gate can reuse the diagnosis later.
+    """
+
+    def post(self, request, request_id):
+        diagnostic_request = get_object_or_404(DiagnosticRequest, pk=request_id)
+
+        if diagnostic_request.status == DiagnosticStatus.COMPLETE:
+            return response.Response(
+                DiagnosticRequestSerializer(diagnostic_request).data
+            )
+
+        if not diagnostic_request.summary:
+            return response.Response(
+                {"detail": "Run a diagnosis first — nothing to resolve yet."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # pgvector returns a numpy array — never use `if not embedding` (ambiguous).
+        if diagnostic_request.embedding is None:
+            return response.Response(
+                {
+                    "detail": (
+                        "Symptom is not embedded yet — send a message or re-run diagnosis."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        diagnostic_request.status = DiagnosticStatus.COMPLETE
+        diagnostic_request.save(update_fields=["status", "updated_at"])
+        return response.Response(
+            DiagnosticRequestSerializer(diagnostic_request).data
+        )
 
 
 class DiagnosticRunStreamView(views.APIView):

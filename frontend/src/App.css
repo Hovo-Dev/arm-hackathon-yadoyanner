@@ -303,6 +303,36 @@ textarea {
 
 /* ---------- chat header ---------- */
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.secondary-btn {
+  font: inherit;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+  font-weight: 600;
+}
+.secondary-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.secondary-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.secondary-btn.compact {
+  padding: 7px 14px;
+  font-size: 12px;
+}
+
 .header-bar {
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
