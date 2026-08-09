@@ -18,6 +18,165 @@ Query ──> [VIN check] ──> [intent router] ──> [case gate] ──> [d
 
 ---
 
+## 0. The short version (deck material)
+
+Everything below this heading is written so each subsection maps to roughly one
+slide. Numbers are measured, not estimated; where something is unfixed it says
+so, because a limitation you name yourself is worth more than one a judge finds.
+
+### 0.1 The problem
+
+A car owner in Armenia with a strange noise has three options: guess, ask a
+forum in a language they may not write well, or hand the car to a mechanic and
+accept whatever they are told. The fleet is mostly rebuilt US imports and
+European models, decades old, and the good information about them is scattered
+across English forums, Russian forums, and manufacturer manuals.
+
+Meanwhile the question itself usually arrives as **Latin-script Armenian** —
+Armenian typed on a Latin keyboard, mixed with Russian loanwords:
+
+> `matory ercnuma inch anem`  ·  `Mexanika karobki pervi vaxt dzena galis`
+
+No off-the-shelf assistant reads that well, and nothing indexes list.am,
+auto.am or turn.am.
+
+### 0.2 What it does
+
+One sentence in, four things out:
+
+| Out | From |
+|---|---|
+| Probable causes, ranked | the diagnostician agent, over retrieved sources |
+| An urgency call | the model, floored by a safety rule it cannot lower |
+| What to buy — real listings, real prices | list.am / auto.am, scraped and status-checked |
+| Who to call — real workshops | turn.am, via schema.org JSON-LD |
+
+### 0.3 The differentiator: it is built to be checked
+
+The interesting engineering here is not "an LLM answers car questions". It is
+the machinery that stops it answering *plausibly but wrongly*:
+
+- **Prices and links are never generated.** `PartOption` has no price field, so
+  a fabricated price has nowhere to go. Every displayed price comes from the
+  stored listing record.
+- **Every claim resolves or is dropped.** `finalize` counts unresolvable
+  references and the UI reports the count.
+- **Uncited causes are allowed but labelled.** `Cause.basis` separates
+  "evidence" from "standard_diagnosis"; the label is *derived* in `finalize`,
+  not taken from the model, and caps confidence.
+- **The whole run is visible.** Every step, search and source streams to the UI
+  as it happens and is persisted, so the reasoning is auditable after the fact.
+
+### 0.4 Architecture
+
+```
+Query ──> [VIN check] ──> [intent router] ──> [case gate] ──> [diagnostician]
+                                                    │                │
+                                                    │          [parts explorer]
+                                                    │                │
+                                                    └──────> [shops] ──> Answer
+```
+
+Seven stages, **three** of which cost a model call. The rest is deterministic
+and free — which is the point the pipeline view in the UI makes visible.
+
+Ports, not integrations: the layer owns no database, no embedding model and no
+HTTP client. It asks for those through two Protocols (§4).
+
+### 0.5 Numbers we measured
+
+**Latin-script Armenian is a first-class input.** Raw text embeds to nothing
+useful; normalizing first is what makes the case gate work at all:
+
+| Input | Raw text → stored case | Summarized → stored case |
+|---|---|---|
+| Latin-script Armenian | 0.1658 | **0.9823** |
+| Armenian script | 0.2950 | **0.9916** |
+
+**And it costs the user almost nothing** (4 runs each, against the same case):
+
+| Input language | mean | worst case | hits |
+|---|---|---|---|
+| Full English | 0.9715 | 0.9530 | 4/4 |
+| Latin-script Armenian | 0.9181 | 0.8604 | 4/4 |
+
+The gap is summarizer variance, not an embedding weakness — terser summaries
+drop a token. Both clear the 0.80 gate.
+
+**Latency work:**
+
+| | before | after |
+|---|---|---|
+| Creating a request | 18 s | 0.06 s |
+| Router (reasoning disabled) | ~16 s | ~2 s |
+| `"hello"` as a follow-up | 20 s, 2 model calls | 0.4 s, **0 model calls** |
+| Firecrawl calls per run | 30–45 | ~5 (hard cap 8) |
+| First cause visible | with the answer, 26 s | streamed at **20 s** |
+
+### 0.6 The bug slide — what reading the output found
+
+Roughly nineteen integrity bugs, nearly all found by reading answers rather
+than by anything failing. The ones worth showing:
+
+1. **A public OBD-code dataset was wrong.** 11 of 21 common codes mislabelled —
+   P0420 as "Secondary Air Injection Relay B", P0300 as "Cylinder 12
+   Contribution". Mirrored verbatim in an AWS solutions repo. Fix: a
+   hand-verified table takes precedence; the bulk set is quarantined at low
+   relevance and `scripts/validate_obd.py` enforces it.
+2. **A fabricated price on a real citation.** The model claimed a part fit and
+   quoted 32,000 AMD while the cited listing said 29,000. Citation resolution
+   is not truthfulness — a claim can point at a real record and misdescribe it.
+   Fix: `_verify_part_claims` checks quoted prices appear verbatim in the cited
+   evidence.
+3. **Requiring a citation for every cause made the model invent one.** It
+   dropped the textbook differential and produced a battery-sensor→cooling
+   theory instead. Fix: `Cause.basis`.
+4. **A transient 429 cached as a permanent negative** — four vehicles cached
+   for 30 days as "no manual exists". Fix: never cache on error.
+
+The recurring theme, and the honest one to present:
+**silent degradation is right for availability and wrong for correctness.**
+Four separate bugs turned a failure into a plausible-looking answer.
+
+A second theme: **enumeration loses.** Four times a hardcoded list was replaced
+by something computed — downloaded manuals → a lazy cache, OEM portals → a URL
+score, search domains → locality ranking, turn.am categories → their live
+sitemap.
+
+### 0.7 Demo script
+
+1. **Latin-script Armenian, cold** — `Mexanika karobki pervi vaxt dzena galis`
+   on an Opel Astra 2011. Watch the translate step narrate, sources stream in,
+   causes appear one at a time before the answer lands.
+2. **Open "Research"** — nine sources, clickable, the cited ones highlighted.
+   This is the auditability claim, made checkable.
+3. **Say `hello`** — returns instantly, zero model calls. Shows the router
+   short-circuit.
+4. **Show a source that is wrong** — see §0.8. Owning this is stronger than
+   hoping nobody clicks.
+
+### 0.8 What does not work yet (say it first)
+
+- **NHTSA relevance ranking is broken.** Lexical overlap on complaint summaries
+  cannot tell "this dataset covers your symptom" from "this dataset shares
+  vocabulary with your symptom". Measured: matching and non-matching queries
+  produce *identical* score distributions (both top out at 0.600), so no
+  threshold separates them. A 1998 Maxima has 118 complaints and **zero** about
+  oil consumption, yet an oil question returns four electrical faults. The fix
+  is embedding similarity, using the model already loaded for case matching.
+- **NHTSA covers US-market makes only** — 34 models for Nissan, 77 for BMW,
+  **0** for Opel, Škoda, Lada, Peugeot, Renault. For much of the Armenian fleet
+  it can never contribute. This is why web retrieval is not optional.
+- **The transliteration glossary has gaps.** `ptut` (worn thin) was read as
+  "replaced" — opposite diagnostic situations. Unglossed words get guessed
+  rather than flagged.
+- **The diagnostician prefers a clarifying question** to listing causes, more
+  often than it should.
+- **The case gate has never fired in the wild.** Threshold is 0.80; the one
+  real-world match scored 0.7984 and displays as "80%".
+
+---
+
 ## 1. Install
 
 ```bash

@@ -17,6 +17,7 @@ from django.conf import settings
 from django.db import connection
 
 from carmed import Answer, Query, Vehicle, build, run
+from carmed import vehicle as veh
 from carmed.graph import State
 from carmed.models import Diagnosis, Trace
 
@@ -65,6 +66,77 @@ def _raw_user_text(diagnostic_request) -> str:
     return " ".join(content.strip() for content in contents if content and content.strip())
 
 
+def _decode_vin(vehicle: Vehicle) -> Vehicle:
+    """Replace what the owner typed with what the factory recorded.
+
+    vPIC is the regulator's own catalogue, so this turns inference into
+    lookup -- the strongest anti-hallucination move available. The engine is
+    the point: a 2004 Altima shipped with a 2.5L QR25DE or a 3.5L VQ35DE, and
+    those take different parts. Without it the parts agent searches "2004
+    Altima radiator" and cannot tell the two apart.
+
+    Lives here rather than in carmed because carmed owns no HTTP client, and
+    it runs before the graph so every stage downstream sees the corrected car.
+
+    Two things it deliberately does not do. It never overrides make or model
+    from a VIN that failed its checksum -- a mistyped VIN decodes to a real
+    but different car, and silently swapping the owner's Honda for someone
+    else's Nissan is worse than ignoring the VIN. And it never clears a field
+    it could not fill: vPIC is NHTSA's, so European cars decode to nothing at
+    all, and for those make/model/year typed by the owner is all there is.
+    """
+    if not vehicle.vin:
+        return vehicle
+    try:
+        from research.sources import vpic
+    except Exception as exc:  # noqa: BLE001 - the app must run without research/
+        logger.warning("vPIC unavailable (%s) -- using the typed vehicle.", exc)
+        return vehicle
+
+    try:
+        fields = vpic.spec(vehicle.vin)
+    except Exception as exc:  # noqa: BLE001 - a decode is an optimization
+        logger.warning("VIN decode failed (%s) -- using the typed vehicle.", exc)
+        return vehicle
+    if not fields:
+        return vehicle
+
+    patch: dict = {}
+    if fields.get("displacement_l"):
+        try:
+            patch["engine_l"] = round(float(fields["displacement_l"]), 1)
+        except ValueError:
+            pass
+    if fields.get("engine_model"):
+        patch["engine_code"] = fields["engine_model"]
+    # How far to trust the identity fields depends on whether the VIN could be
+    # checked. A full 17-character VIN with a passing checksum is authoritative
+    # and overrides what was typed. A partial VIN still decodes -- the first 11
+    # characters carry make, plant and engine -- but has no check digit, so it
+    # may only *fill* blanks, never contradict the owner. `vin_valid` is set by
+    # carmed's vehicle step, which has not run yet, so check it here.
+    trusted = veh.is_valid(veh.normalize_vin(vehicle.vin))
+    decoded = {
+        "make": fields["make"].title() if fields.get("make") else None,
+        "model": fields.get("model"),
+        "year": _as_year(fields.get("year")),
+    }
+    for field, value in decoded.items():
+        if value is None:
+            continue
+        if trusted or getattr(vehicle, field) is None:
+            patch[field] = value
+
+    return vehicle.model_copy(update=patch) if patch else vehicle
+
+
+def _as_year(raw) -> int | None:
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
 def build_query(diagnostic_request) -> Query:
     """DiagnosticRequest -> carmed Query.
 
@@ -89,11 +161,13 @@ def build_query(diagnostic_request) -> Query:
     return Query(
         text=diagnostic_request.symptom_text or "",
         raw_text=_raw_user_text(diagnostic_request),
-        vehicle=Vehicle(
-            make=diagnostic_request.car_make or None,
-            model=diagnostic_request.car_model or None,
-            year=diagnostic_request.car_year,
-            vin=diagnostic_request.vin or None,
+        vehicle=_decode_vin(
+            Vehicle(
+                make=diagnostic_request.car_make or None,
+                model=diagnostic_request.car_model or None,
+                year=diagnostic_request.car_year,
+                vin=diagnostic_request.vin or None,
+            )
         ),
         city=settings.CARMED_DEFAULT_CITY,
     )
@@ -137,7 +211,10 @@ def _tap(log, events: queue.Queue) -> None:
     and keep their original behaviour, so `log` still ends up complete and the
     final Trace is unaffected.
     """
-    original = {name: getattr(log, name) for name in ("step", "llm", "lookup", "note")}
+    original = {
+        name: getattr(log, name)
+        for name in ("step", "llm", "lookup", "note", "partial")
+    }
 
     def mirror(name, to_event):
         def wrapped(*args):
@@ -150,6 +227,11 @@ def _tap(log, events: queue.Queue) -> None:
     log.llm = mirror("llm", lambda agent: {"type": "llm", "agent": agent})
     log.lookup = mirror("lookup", lambda name, count: {"type": "lookup", "name": name, "count": count})
     log.note = mirror("note", lambda text: {"type": "note", "text": text})
+    # Partial answer fragments, so the UI can render a cause the moment the
+    # model finishes writing it rather than after the whole JSON object.
+    log.partial = mirror(
+        "partial", lambda kind, payload: {"type": "partial", "kind": kind, "data": payload}
+    )
 
 
 def _assemble_answer(final_state: State, log) -> Answer:

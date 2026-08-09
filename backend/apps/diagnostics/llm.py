@@ -4,9 +4,12 @@
 Loaded lazily and cached, same as apps.cases.embeddings: the client is only
 constructed the first time something actually needs to talk to the LLM.
 """
+import logging
 from functools import lru_cache
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -150,3 +153,59 @@ def summarize_symptom(transcript: str) -> str:
             {"role": "user", "content": transcript},
         ]
     )
+
+
+# The same glossary as above, used in the other direction. Written once and
+# read twice on purpose: the words the owner types are exactly the words the
+# reply should come back in, and two lists would drift.
+_REPLY_SYSTEM_PROMPT = (
+    "Rewrite the assistant's reply in Armenian written with LATIN letters -- "
+    "the way Armenians type on a Latin keyboard, not Armenian script and not "
+    "formal literary Armenian.\n\n"
+    "Rules, in order:\n"
+    "1. Keep every number exactly as written: prices, years, part numbers, "
+    "measurements, OBD codes. Never convert or round them.\n"
+    "2. Keep the meaning. Do not add advice, do not drop a caveat, do not "
+    "make a hedged statement sound certain.\n"
+    "3. Use the everyday words drivers here actually use -- mostly Russian "
+    "loanwords -- not invented literary equivalents:\n"
+    f"   {_TRANSLITERATION_GLOSSARY}\n"
+    "4. If a term has no everyday Armenian form, leave the English word.\n"
+    "5. Reply with the rewritten text only. No quotes, no notes, no original."
+)
+
+
+def to_latin_armenian(text: str) -> str:
+    """English reply -> the Latin-script Armenian the owner reads.
+
+    Display only, and deliberately the last thing that happens. Everything the
+    system reasons with, stores and matches on stays English: `summary` feeds
+    the case store (`Case.fix` is built from `causes[0].title`), and a KB half
+    in Armenian would stop matching the English symptoms it is queried with.
+
+    Separating translation from generation is the point. Asked to *produce*
+    Armenian, the diagnostician does the reasoning and the wording in one pass,
+    so a bad word choice and a bad diagnosis become the same failure. Asked to
+    *translate* a finished English answer, only the wording can go wrong -- and
+    measured, the facts survive: prices, part numbers and units came through
+    verbatim, while the register needed the glossary above (unprompted the
+    model reached for invented forms like "pordzatuphi yugh" instead of
+    "karobkayi yugh").
+
+    Returns the English unchanged on any failure. A reply in the wrong language
+    is a far smaller problem than no reply.
+    """
+    body = (text or "").strip()
+    if not body:
+        return text
+    try:
+        out = complete(
+            [
+                {"role": "system", "content": _REPLY_SYSTEM_PROMPT},
+                {"role": "user", "content": body},
+            ]
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Reply translation failed (%s) -- sending English.", exc)
+        return text
+    return out.strip() or text

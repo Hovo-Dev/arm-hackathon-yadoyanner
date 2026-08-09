@@ -27,12 +27,16 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
+from .. import cache
 from ..schemas import Evidence, SourceKind, VehicleContext
 from .base import get_json
 
 log = logging.getLogger(__name__)
 
 VPIC = "https://vpic.nhtsa.dot.gov/api/vehicles"
+
+#: A VIN decode is a fact about a car that was already built.
+_FOREVER = 100 * 365 * 24 * 3600
 
 # Fields worth carrying into a diagnosis. vPIC returns ~140 per VIN, most of
 # them empty or irrelevant to repair work.
@@ -55,19 +59,29 @@ _USEFUL = [
 ]
 
 
-def decode_vin(vin: str) -> tuple[VehicleContext | None, list[Evidence]]:
-    """VIN -> exact factory specification.
+def spec(vin: str) -> dict[str, str]:
+    """VIN -> the useful factory fields, or ``{}`` when it does not decode.
 
-    Returns (vehicle, evidence). The vehicle is authoritative and should
-    override anything the user typed or the model inferred.
+    Cached on disk without expiry: what a factory built into a given VIN is
+    not going to change. This matters because the decode sits in the request
+    path -- the first lookup for a car costs a round trip, every later one
+    costs a file read.
+
+    Returns ``{}`` rather than raising, for the two ordinary cases: a car
+    never sold in the US (vPIC is NHTSA's, so Opel, Skoda, Lada, Peugeot and
+    Renault decode to nothing) and a VIN typed wrong.
     """
     vin = (vin or "").strip().upper()
     if len(vin) < 11:  # a partial VIN still decodes; shorter is not a VIN
-        return None, []
+        return {}
+
+    cached = cache.get("vpic", {"vin": vin}, ttl_s=_FOREVER)
+    if cached is not None:
+        return cached
 
     data = get_json(f"{VPIC}/DecodeVinValues/{vin}", params={"format": "json"})
     if not data or not data.get("Results"):
-        return None, []
+        return {}  # a transient failure must not be cached as "no such car"
 
     row = data["Results"][0]
     fields: dict[str, str] = {}
@@ -79,6 +93,23 @@ def decode_vin(vin: str) -> tuple[VehicleContext | None, list[Evidence]]:
     if not fields.get("make") or not fields.get("model"):
         code = row.get("ErrorText") or "VIN did not decode"
         log.info("VIN decode failed: %s", str(code)[:120])
+        fields = {}
+
+    # Cached either way: "this VIN does not decode" is a real answer from a
+    # reachable service, and re-asking it on every request is pure waste.
+    cache.put("vpic", {"vin": vin}, fields)
+    return fields
+
+
+def decode_vin(vin: str) -> tuple[VehicleContext | None, list[Evidence]]:
+    """VIN -> exact factory specification.
+
+    Returns (vehicle, evidence). The vehicle is authoritative and should
+    override anything the user typed or the model inferred.
+    """
+    vin = (vin or "").strip().upper()
+    fields = spec(vin)
+    if not fields:
         return None, []
 
     year = None

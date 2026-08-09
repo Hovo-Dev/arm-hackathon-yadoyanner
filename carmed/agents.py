@@ -81,9 +81,12 @@ Classify what the user wants.
 - part_lookup: already knows the part, wants to buy it ("front pads for E60")
 - shop_lookup: wants a mechanic ("who fixes BMW gearboxes in Yerevan")
 - safety_check: asks whether the car is drivable ("can I drive with this?")
+- small_talk: not about the car at all -- a greeting, a thank-you, an aside
 
 Symptom plus "is it safe" -> safety_check. Symptom plus "what do I buy" ->
-diagnose. When unclear, choose diagnose; it is the widest path.
+diagnose. When the message describes the car in any way, choose diagnose; it
+is the widest path. Reserve small_talk for messages that say nothing about a
+car -- and never infer a symptom from an earlier message to avoid it.
 
 Put any part the user named explicitly into named_parts, verbatim.
 """
@@ -107,10 +110,18 @@ Rules:
 - urgency is an integer: 0 drive it, 1 fix this week, 2 fix now, 3 do not
   drive. Judge it from the symptom and what you retrieved. Brakes, steering,
   suspension and airbags carry real risk -- weigh that honestly.
-- If the evidence does not support naming a cause, set abstain to true and
-  leave causes empty. "Not enough information" is a correct answer.
+- Set basis to "evidence" when retrieved records support the cause, and to
+  "standard_diagnosis" when it is simply what this symptom usually means on
+  this kind of car. Both are useful; mislabelling one as the other is not.
+- The searches often return nothing, because the sources do not cover every
+  market. That is not a reason to withhold the differential a mechanic would
+  give from the symptom alone. Name those causes with basis
+  "standard_diagnosis", no evidence ids, and confidence no higher than
+  "moderate".
+- Only abstain when the symptom itself is too vague to narrow at all -- not
+  merely because the searches came back empty.
 - If one missing fact would change the diagnosis, put it in
-  clarifying_question and leave causes empty.
+  clarifying_question. You may still list the causes you can already name.
 """
 
 PARTS_PROMPT = """\
@@ -172,6 +183,16 @@ class RunLog:
     def note(self, message: str) -> None:
         self.notes.append(message)
 
+    def partial(self, kind: str, payload: dict) -> None:
+        """A piece of the answer, emitted while the model is still writing.
+
+        Not recorded on the log: this is a view concern. The finished object
+        arrives in the normal way and is the source of truth -- a partial that
+        never lands (a cut connection, a malformed tail) must not be able to
+        change what the run produced. Callers that are not streaming pass no
+        `on_partial` and nothing here is ever called.
+        """
+
 
 def _ctx(state: Any) -> tuple[Vehicle, SystemArea]:
     get = state.get if isinstance(state, dict) else lambda k, d=None: getattr(state, k, d)
@@ -213,6 +234,14 @@ def build_tools(research: ResearchTool, log: RunLog) -> dict[str, BaseTool]:
         log.note(f"    searched knowledge for {query!r} -> {len(found)}")
         for snippet in found:
             log.knowledge[snippet.id] = snippet
+            # Retrieved, not yet cited. The UI labels it that way: what the
+            # answer ends up standing on is decided later, in finalize.
+            log.partial("source", {
+                "id": snippet.id,
+                "title": snippet.title or snippet.source_url,
+                "kind": snippet.kind,
+                "url": snippet.source_url,
+            })
         if not found:
             return "No sources found for that symptom. Try different wording."
         return "\n\n".join(
@@ -370,23 +399,145 @@ def _extract_json(text: str) -> str:
     return text[start : end + 1] if start != -1 and end > start else text
 
 
+class _ArrayScanner:
+    """Yields complete JSON objects out of a named array as text arrives.
+
+    The model writes one object top to bottom, so waiting for the closing
+    brace means waiting for the entire answer -- but each element of
+    ``causes`` is finished long before that. This walks the buffer once,
+    tracking string state and brace depth, and hands back every element the
+    moment it closes.
+
+    Malformed input simply produces nothing. The parsed final message stays
+    the source of truth, so a scanner that loses its place costs the user a
+    progressive render, never a wrong answer.
+    """
+
+    def __init__(self, key: str) -> None:
+        self._key = key
+        self._buf = ""
+        self._pos = 0
+        self._start: int | None = None
+        self._depth = 0
+        self._in_str = False
+        self._escaped = False
+        self._found = False
+        self._done = False
+
+    def feed(self, chunk: str) -> list[dict]:
+        self._buf += chunk
+        if self._done:
+            return []
+
+        if not self._found:
+            marker = f'"{self._key}"'
+            at = self._buf.find(marker)
+            if at == -1:
+                return []
+            bracket = self._buf.find("[", at + len(marker))
+            if bracket == -1:
+                return []
+            self._found, self._pos = True, bracket + 1
+
+        out: list[dict] = []
+        while self._pos < len(self._buf):
+            char = self._buf[self._pos]
+            self._pos += 1
+            if self._in_str:
+                if self._escaped:
+                    self._escaped = False
+                elif char == "\\":
+                    self._escaped = True
+                elif char == '"':
+                    self._in_str = False
+            elif char == '"':
+                self._in_str = True
+            elif char == "{":
+                if self._depth == 0:
+                    self._start = self._pos - 1
+                self._depth += 1
+            elif char == "}":
+                self._depth -= 1
+                if self._depth == 0 and self._start is not None:
+                    raw, self._start = self._buf[self._start : self._pos], None
+                    try:
+                        out.append(json.loads(raw))
+                    except ValueError:
+                        pass
+            elif char == "]" and self._depth == 0:
+                self._done = True
+                break
+        return out
+
+
+def _stream(agent, payload: dict, config: dict, on_partial, on_reset, key: str) -> dict:
+    """Run the agent in streaming mode, emitting array elements as they close.
+
+    ``values`` carries the graph state after each step and ``messages`` the
+    token deltas; asking for both means the final state is still returned
+    exactly as ``invoke`` would have returned it, and the streaming is purely
+    additive.
+    """
+    scanner = _ArrayScanner(key)
+    result: dict = {}
+    for mode, chunk in agent.stream(
+        payload, config=config, stream_mode=["values", "messages"]
+    ):
+        if mode == "values":
+            result = chunk
+            continue
+        message = chunk[0] if isinstance(chunk, tuple) else chunk
+        if isinstance(message, ToolMessage):
+            # A tool result sends the model back to writing from the top, so
+            # anything half-scanned belongs to an abandoned attempt -- and so
+            # does anything already emitted from it. Dropping the scanner is
+            # not enough on its own: the caller has shown those elements, and
+            # the model does abandon a full set of causes and come back with a
+            # clarifying question instead. Telling it to discard is what keeps
+            # the display honest.
+            scanner = _ArrayScanner(key)
+            if on_reset is not None:
+                try:
+                    on_reset()
+                except Exception:  # noqa: BLE001 - a display sink must not fail a run
+                    pass
+            continue
+        text = getattr(message, "content", None)
+        if not isinstance(text, str) or not text:
+            continue
+        for element in scanner.feed(text):
+            try:
+                on_partial(element)
+            except Exception:  # noqa: BLE001 - a display sink must not fail a run
+                pass
+    return result
+
+
 def invoke(agent, *, prompt: str, vehicle: Vehicle, city: str,
-           system_area: SystemArea, schema: type[T]) -> tuple[T | None, dict]:
+           system_area: SystemArea, schema: type[T],
+           on_partial=None, on_reset=None,
+           partial_key: str | None = None) -> tuple[T | None, dict]:
     """Run an agent and parse its final message.
 
     Returns ``(None, result)`` when the model produced nothing usable. Callers
     degrade rather than raise -- a malformed response should abstain, not take
     down the request.
+
+    Pass ``on_partial`` with the name of an array field to have each element
+    handed over as the model finishes writing it. The parsed return value is
+    unchanged either way: partials are a preview, not a second result path.
     """
-    result = agent.invoke(
-        {
-            "messages": [HumanMessage(content=prompt)],
-            "vehicle": vehicle,
-            "city": city,
-            "system_area": system_area,
-        },
-        config={"recursion_limit": RECURSION_LIMIT},
-    )
+    payload = {
+        "messages": [HumanMessage(content=prompt)],
+        "vehicle": vehicle,
+        "city": city,
+        "system_area": system_area,
+    }
+    config = {"recursion_limit": RECURSION_LIMIT}
+    if on_partial is not None and partial_key:
+        result = _stream(agent, payload, config, on_partial, on_reset, partial_key)
+    else:
+        result = agent.invoke(payload, config=config)
     for message in reversed(result.get("messages") or []):
         content = getattr(message, "content", None)
         if isinstance(content, str) and content.strip():

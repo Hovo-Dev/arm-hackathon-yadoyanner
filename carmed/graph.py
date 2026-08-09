@@ -62,6 +62,9 @@ NEEDS: dict[Intent, frozenset[str]] = {
     Intent.PART_LOOKUP: frozenset({"parts"}),
     Intent.SHOP_LOOKUP: frozenset({"shops"}),
     Intent.SAFETY_CHECK: frozenset({"diagnose"}),
+    # Nothing to research, so nothing runs. The empty set is the whole
+    # mechanism: every edge predicate already asks what this intent needs.
+    Intent.SMALL_TALK: frozenset(),
 }
 
 
@@ -119,6 +122,19 @@ def _make_vehicle(log: ag.RunLog):
     return vehicle_step
 
 
+#: Matched against the whole message, in the four scripts people actually type
+#: here. Anything longer than a bare greeting goes to the router, which can
+#: read it; this only exists so "hello" costs nothing at all.
+_GREETINGS = frozenset({
+    "hi", "hello", "hey", "yo", "hi there", "hello there",
+    "barev", "barev dzez", "barev dzez!", "voghjuyn", "ողջույն", "բարև",
+    "բարև ձեզ", "privet", "привет", "здравствуйте", "salam",
+    "ok", "okay", "k", "lav", "լավ", "хорошо",
+    "thanks", "thank you", "thx", "merci", "մերսի", "shnorhakalutyun",
+    "շնորհակալություն", "spasibo", "спасибо",
+    "bye", "goodbye", "ցտեսություն", "пока",
+})
+
 _HEURISTICS = (
     (Intent.SAFETY_CHECK, ("safe to drive", "can i drive", "безопасно", "վտանգավոր")),
     (Intent.SHOP_LOOKUP, ("who fixes", "mechanic", "сервис", "мастер", "վարպետ")),
@@ -132,6 +148,15 @@ def _make_route(model: Any, log: ag.RunLog):
     def route(state: State) -> dict:
         log.step("route")
         lowered = state.query.asked.casefold()
+
+        # Whole-string, unlike the heuristics below, which match substrings:
+        # "hi" occurs inside "this" and "which", and a greeting rule that fired
+        # on those would silently swallow real questions. A message that is
+        # nothing but a greeting is the only thing this may catch.
+        if lowered.strip(" .,!?…\n\t") in _GREETINGS:
+            log.note("intent=small_talk (greeting, no model call)")
+            return {"intent": Intent.SMALL_TALK}
+
         for intent, needles in _HEURISTICS:
             if any(n in lowered for n in needles):
                 log.note(f"intent={intent} (keyword, no model call)")
@@ -281,6 +306,11 @@ def _make_diagnose(model: Any, tools: dict, log: ag.RunLog):
                 city=state.query.city,
                 system_area=state.system_area,
                 schema=Diagnosis,
+                # The diagnostician is the longest call in the run. Each cause
+                # goes out as it is written so the wait is spent reading.
+                on_partial=lambda cause: log.partial("cause", cause),
+                on_reset=lambda: log.partial("reset", {"of": "cause"}),
+                partial_key="causes",
             )
             log.llm("diagnostician")
         except Exception as exc:
@@ -329,6 +359,9 @@ def _make_parts(model: Any, tools: dict, log: ag.RunLog):
                 city=state.query.city,
                 system_area=state.system_area,
                 schema=PartsResult,
+                on_partial=lambda option: log.partial("part", option),
+                on_reset=lambda: log.partial("reset", {"of": "part"}),
+                partial_key="options",
             )
             log.llm("parts_explorer")
         except Exception as exc:
@@ -395,7 +428,17 @@ def _make_finalize(log: ag.RunLog, safety_floor: bool):
                 kept = [e for e in cause.evidence if e in known]
                 dropped += len(cause.evidence) - len(kept)
                 dropped += len(txt.find_leaks(f"{cause.title} {cause.explanation}"))
-                clean.append(cause.model_copy(update={"evidence": kept}))
+                patch: dict = {"evidence": kept}
+                # The label is derived, not taken on trust. A cause with no
+                # surviving reference is a standard diagnosis whatever the
+                # model called it -- otherwise "basis" would be one more field
+                # it could fill in optimistically, and the confidence cap that
+                # hangs off it would never fire.
+                if not kept:
+                    patch["basis"] = "standard_diagnosis"
+                    if cause.confidence == "strong":
+                        patch["confidence"] = "moderate"
+                clean.append(cause.model_copy(update=patch))
             diagnosis = diagnosis.model_copy(update={"causes": clean})
             update["diagnosis"] = diagnosis
 
@@ -443,7 +486,15 @@ def _make_finalize(log: ag.RunLog, safety_floor: bool):
                     }
                 )
 
-        if diagnosis and diagnosis.clarifying_question:
+        if state.intent is Intent.SMALL_TALK:
+            # Answered without a model call, because a greeting does not need
+            # one and the round trip is the entire latency the user feels.
+            update["status"] = AnswerStatus.ANSWERED
+            update["message"] = (
+                "Hi. Tell me what the car is doing -- the noise, when it "
+                "happens, and what you were doing at the time."
+            )
+        elif diagnosis and diagnosis.clarifying_question:
             update["status"] = AnswerStatus.NEEDS_CLARIFICATION
             update["message"] = diagnosis.clarifying_question
         elif diagnosis and (diagnosis.abstain or not diagnosis.causes):
@@ -473,6 +524,8 @@ def _after_vehicle(state: State) -> str:
 
 def _after_route(state: State) -> str:
     needs = NEEDS[state.intent]
+    if not needs:
+        return "finalize"
     if "diagnose" in needs:
         return "gate"
     return "parts" if "parts" in needs else "shops"
@@ -523,7 +576,7 @@ def build(
 
     g.add_edge(START, "vehicle")
     g.add_conditional_edges("vehicle", _after_vehicle, ["route", "finalize"])
-    g.add_conditional_edges("route", _after_route, ["gate", "parts", "shops"])
+    g.add_conditional_edges("route", _after_route, ["gate", "parts", "shops", "finalize"])
     g.add_edge("gate", "diagnose")
     g.add_conditional_edges("diagnose", _after_diagnose, ["parts", "shops", "finalize"])
     g.add_conditional_edges("parts", _after_parts, ["shops", "finalize"])

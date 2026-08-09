@@ -1,13 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
-const IMAGE_TYPES = [
-  ["vin_plate", "VIN plate"],
-  ["part", "Old part"],
-  ["dashboard_light", "Dashboard light"],
-  ["damage", "Damage / leak"],
-];
-
 const STATUS_LABEL = {
   pending: "Pending",
   case_matched: "Case matched",
@@ -23,10 +16,10 @@ const EMPTY_FORM = { car_make: "", car_model: "", car_year: "", raw_text: "" };
 // Labels are written for a car owner, not for whoever wrote the graph.
 const PIPELINE = [
   { key: "vehicle", label: "Your car", detail: "Checking the VIN and which market it was built for" },
-  { key: "route", label: "Your question", detail: "Working out what you need", agent: "router" },
+  { key: "route", label: "Your question", detail: "Working out what you need" },
   { key: "gate", label: "Past repairs", detail: "Looking for this problem already solved" },
-  { key: "diagnose", label: "Diagnosis", detail: "Working out what's wrong", agent: "diagnostician" },
-  { key: "parts", label: "Parts", detail: "Finding what to buy", agent: "parts_explorer" },
+  { key: "diagnose", label: "Diagnosis", detail: "Working out what's wrong" },
+  { key: "parts", label: "Parts", detail: "Finding what to buy" },
   { key: "shops", label: "Mechanics", detail: "Finding who can fix it" },
   { key: "finalize", label: "Final checks", detail: "Making sure every claim has a source" },
 ];
@@ -36,14 +29,6 @@ const INTENT_LABEL = {
   part_lookup: "find a part to buy",
   shop_lookup: "find a mechanic",
   safety_check: "check if it's safe to drive",
-};
-
-// What each data source is, in the user's terms rather than the method name.
-const SOURCE_LABEL = {
-  "case_store.find_similar": "Past repairs we've seen",
-  "research.search_knowledge": "Repair guides and forums",
-  "research.search_listings": "Parts for sale",
-  "research.search_shops": "Repair shops",
 };
 
 // The trace notes are the graph's own engineering shorthand. These turn the
@@ -92,6 +77,9 @@ const NOTE_RULES = [
   [/^no model configured -- (.*)$/, (m) => `No AI configured — ${m[1]}`],
   [/^nothing to look up$/, () => "Nothing to look up"],
   [/^\d+ fitment warning/, (m) => m[0]],
+  // Emitted before anything else when the question still needs translating.
+  // Worth showing: it is the one step that can visibly get the question wrong.
+  [/^understood as: (.+)$/, (m) => `Read your question as: "${m[1]}"`],
 ];
 
 function humanizeNote(text) {
@@ -132,7 +120,6 @@ function readTrace(events) {
     // showing them as-is reads like an error, so they're simply omitted.
     car: car && car[1] !== "unknown vehicle" ? car[1] : null,
     story: notes.map(humanizeNote).filter(Boolean),
-    notes,
   };
 }
 
@@ -140,26 +127,70 @@ function StatusDot({ state }) {
   return <span className={`stage-dot ${state}`} />;
 }
 
+// A step that has happened. The clock face reads as "this took time", which
+// is the honest thing to say about a step that ran -- these are 2-8 second
+// searches, not instant ticks.
+function StepIcon() {
+  return (
+    <svg className="step-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 5v3.2l2 1.2" fill="none" stroke="currentColor" strokeWidth="1.4"
+            strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Only ever the last row, and only once the run has actually finished.
+function DoneIcon() {
+  return (
+    <svg className="step-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5.4 8.2l1.8 1.8 3.4-3.6" fill="none" stroke="currentColor" strokeWidth="1.5"
+            strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Rotates to point down when its section is open. Shared so the sidebar
+// disclosure and the answer-provenance disclosure are visibly the same
+// control, which "···" never was -- that reads as an overflow menu, and
+// clicking it expecting rename/delete and getting a pipeline is a small lie.
+function Chevron({ className = "" }) {
+  return (
+    <svg className={`chev ${className}`} viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.75"
+            strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// What the collapsed row promises. Sources first, because they are the part
+// worth opening for and the part the reader can check. A run that read
+// nothing says "Steps" rather than "0 sources" -- a zero here is not a
+// finding, it is just an empty section.
+function traceLabel(events) {
+  const n = sourcesFrom(events).length;
+  return n ? `${n} source${n === 1 ? "" : "s"}` : "Steps";
+}
+
+// Sources the run actually opened, newest wording last, de-duplicated. Read
+// off the persisted trace, so a request from last week still shows what it
+// was working from -- not just the one currently streaming.
+function sourcesFrom(events) {
+  return Object.values(
+    events
+      .filter((e) => e.type === "partial" && e.kind === "source")
+      .reduce((acc, e) => ({ ...acc, [e.data.id]: e.data }), {})
+  );
+}
+
 // Rendered only while its history record is expanded, so everything it knows is
 // laid out at once -- the "..." on the record is the only toggle.
 function Pipeline({ run }) {
   const { events, running } = run;
   const started = events.filter((e) => e.type === "step").map((e) => e.name);
-  const llm = events.filter((e) => e.type === "llm").map((e) => e.agent);
-  // One row per source, not per call: the parts agent hits the same source five
-  // or six times with different wording, and six identical "nothing found" rows
-  // say no more than one does.
-  const lookups = Object.values(
-    events
-      .filter((e) => e.type === "lookup")
-      .reduce((acc, e) => {
-        const row = acc[e.name] || (acc[e.name] = { name: e.name, count: 0, calls: 0 });
-        row.count += e.count;
-        row.calls += 1;
-        return acc;
-      }, {})
-  );
-  const { intent, gate, car, story, notes, reused } = readTrace(events);
+  const { intent, car, reused } = readTrace(events);
+  const sources = sourcesFrom(events);
   const current = started[started.length - 1];
   // Not "has a done event": a trace replayed from the server carries the steps
   // but not the terminal event, and treating that as unfinished would leave
@@ -188,90 +219,62 @@ function Pipeline({ run }) {
         <span className="pipeline-title">
           {running ? "Running…" : finished ? "Pipeline complete" : "Pipeline"}
         </span>
-        <span className="cost-badge" title="How many times the AI was asked. Most steps need no AI at all.">
-          {llm.length === 0 ? "No AI" : `${llm.length} AI`}
-        </span>
       </div>
 
       {car && <div className="pipeline-sub">{car}</div>}
 
+      {/* One row per stage, carrying its own detail. This used to be two full
+          passes over PIPELINE -- chips, then the same seven labels again with
+          descriptions under them -- which read as fourteen things happening
+          instead of seven. */}
       <div className="stages">
         {PIPELINE.map((stage) => {
           const state = stateOf(stage.key);
-          const called = stage.agent && llm.includes(stage.agent);
           return (
             <div key={stage.key} className={`stage ${state}`}>
               <StatusDot state={state} />
-              <span className="stage-label">
-                {stage.label}
-                {called && <span className="agent-tag on">AI</span>}
-                {stage.agent && !called && state === "done" && (
-                  <span className="agent-tag saved">no AI</span>
+              <div className="stage-body">
+                <span className="stage-label">{stage.label}</span>
+                {/* Only for the stages that ran. A description of a step that
+                    was skipped is filler. */}
+                {state !== "skipped" && state !== "idle" && (
+                  <span className="stage-detail">{detailOf(stage)}</span>
                 )}
-              </span>
+              </div>
             </div>
           );
         })}
       </div>
 
       <div className="pipeline-details">
-        <div className="detail-steps">
-          {PIPELINE.map((stage) => (
-            <div key={stage.key} className={`detail-row ${stateOf(stage.key)}`}>
-              <div className="detail-step">{stage.label}</div>
-              <div className="detail-text">{detailOf(stage)}</div>
-            </div>
-          ))}
-        </div>
-
-        {gate && (
-          <div className={`gate-card ${gate.hit ? "hit" : "miss"}`}>
-            <div className="gate-verdict">
-              {gate.hit ? "We've fixed this before" : "New problem for us"}
-            </div>
-            <div className="gate-detail">
-              {gate.hit
-                ? "Answered from a repair that was confirmed on a car like yours, so the AI wasn't asked to diagnose."
-                : gate.tier === "loose"
-                  ? "The closest past repair is on a different model, so it was passed to the AI as a hint rather than used as the answer."
-                  : "Nothing matching in our past repairs, so this went to the AI for a full diagnosis."}
-            </div>
-          </div>
-        )}
-
-        {lookups.length > 0 && (
-          <div className="lookups">
-            {lookups.map((l) => (
-              <div key={l.name} className={`lookup ${l.count === 0 ? "empty" : ""}`}>
-                <span className="source">
-                  {SOURCE_LABEL[l.name] || l.name}
-                  {l.calls > 1 && <em> · searched {l.calls}×</em>}
-                </span>
-                <span className="count">
-                  {l.count === 0 ? "nothing found" : `${l.count} found`}
-                </span>
-                {l.name.startsWith("research.") && l.count === 0 && (
-                  <span className="stub-tag">not connected yet</span>
-                )}
-              </div>
+        {/* No gate card here. "New problem for us / Nothing matching in our
+            past repairs" was a bordered, coloured panel restating one line
+            the run narrative already carries -- decoration around a fact,
+            competing for attention with the sources, which are the part
+            worth reading. The verdict still shows in the answer panel. */}
+        {/* The run's narrative lives in the answer panel now, where the user is
+            actually looking. Repeating it here was the same text twice. The
+            sources do belong here: a count of what was read is not checkable,
+            and the whole point of showing provenance is that you can go look. */}
+        {sources.length > 0 && (
+          <div className="src-list">
+            <div className="src-head">Sources read <span>{sources.length}</span></div>
+            {sources.map((s) => (
+              <a
+                key={s.id}
+                className="src"
+                href={s.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={s.url}
+              >
+                <span className="src-kind">{s.kind}</span>
+                <span className="src-title">{s.title}</span>
+              </a>
             ))}
           </div>
         )}
 
-        {story.length > 0 && (
-          <ul className="story">
-            {story.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        )}
-
-        {notes.length > 0 && (
-          <details className="trace-log">
-            <summary>Technical details</summary>
-            <pre>{notes.join("\n")}</pre>
-          </details>
-        )}
       </div>
     </div>
   );
@@ -281,6 +284,189 @@ function Pipeline({ run }) {
 // verdict: "do not drive" is advice about the car as it stands now, and three
 // of them stacked down the thread -- two of them superseded -- is three
 // conflicting instructions rather than a history.
+// "understand" is emitted by the view before the graph starts, so it has no
+// pipeline stage of its own.
+const STAGE_DETAIL = Object.fromEntries([
+  ["understand", "Reading your question"],
+  ["reply", "Putting the answer into your language"],
+  ...PIPELINE.map((s) => [s.key, s.detail]),
+]);
+
+// What the user watches while the run is going.
+//
+// Two things stream in. The graph's own progress notes, which read as the
+// steps it is taking; and finished pieces of the answer -- the diagnostician
+// writes one cause at a time, and each appears the moment its JSON object
+// closes rather than after the whole reply lands.
+//
+// Nothing streamed here is authoritative. A partial that never completes, or
+// one from an attempt the model then abandoned, must not be able to change
+// what the run produced -- so once the run finishes, the streamed causes and
+// parts give way to AnswerCard's verified copies.
+//
+// The record of *how* the answer was reached does not give way: the steps and
+// the sources read stay on screen afterwards. Watching six sources go by and
+// then having them vanish the moment the answer lands is worse than never
+// showing them, because the answer then looks like it came from nowhere.
+function LiveAnswer({ run }) {
+  const { events, running } = run;
+  const steps = events.filter((e) => e.type === "step").map((e) => e.name);
+  const detail = running
+    ? STAGE_DETAIL[steps[steps.length - 1]] || "Starting…"
+    : "Research";
+  const { story } = readTrace(events);
+  // The model can write a full set of causes, call a tool, and then come back
+  // with something else entirely -- a clarifying question instead of an
+  // answer. A "reset" marks that abandonment, and everything of that kind
+  // before it has to disappear, or the user is left reading a diagnosis the
+  // run then withdrew.
+  const since = (kind) => {
+    const all = events.filter(
+      (e) => e.type === "partial" && (e.kind === kind || (e.kind === "reset" && e.data?.of === kind))
+    );
+    const last = all.map((e) => e.kind).lastIndexOf("reset");
+    return all.slice(last + 1).map((e) => e.data);
+  };
+  const causes = since("cause");
+  const parts = since("part");
+  const sources = sourcesFrom(events);
+  // Retrieved is not the same as used. Only what a cause actually points at
+  // is a citation, and finalize can still drop one -- so this is a preview.
+  const cited = new Set(causes.flatMap((c) => c.evidence || []));
+
+  // Open while the run is going -- that is the whole point of it -- and folds
+  // itself away once the answer lands, so the transcript stays readable
+  // without the record being thrown away. Reopening is one click, and the
+  // choice sticks until the next run starts.
+  const [open, setOpen] = useState(true);
+  useEffect(() => setOpen(running), [running]);
+
+  // What the collapsed row has to say for itself. "6 steps" alone is not worth
+  // opening; the number of sources is.
+  const summary = [
+    sources.length && `${sources.length} source${sources.length === 1 ? "" : "s"}`,
+    story.length && `${story.length} step${story.length === 1 ? "" : "s"}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className={`live ${running ? "" : "settled"} ${open ? "open" : "closed"}`}>
+      <button
+        type="button"
+        className="live-head"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {/* Always present, running or not: it is what tells you the row can be
+            folded, and a control that appears only after the fact reads as a
+            different control. */}
+        <Chevron className="live-chevron" />
+        {running && (
+          <span className="pending-dots">
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
+        <span className="live-title">{detail}</span>
+        {summary && <span className="live-summary">{summary}</span>}
+      </button>
+
+      {/* One wrapper for the whole body, so open/close is a single height
+          transition rather than four sections popping independently. */}
+      <div className={`collapse ${open ? "open" : ""}`}>
+       <div className="collapse-inner">
+      {story.length > 0 && (
+        <ol className="live-story">
+          {story.map((line, i) => (
+            <li key={i} className={i === story.length - 1 && running ? "fresh" : ""}>
+              <StepIcon />
+              <span className="step-text">{line}</span>
+            </li>
+          ))}
+          {/* Only once the run has really ended. A "Done" that appears while
+              work is still going is the one thing this list must not say. */}
+          {!running && (
+            <li className="step-done">
+              <DoneIcon />
+              <span className="step-text">Done</span>
+            </li>
+          )}
+        </ol>
+      )}
+
+      {sources.length > 0 && (
+        <div className="live-block">
+          <div className="answer-section">
+            Sources read <span className="live-count">{sources.length}</span>
+          </div>
+          <div className="live-sources">
+            {sources.map((s) => (
+              <a
+                key={s.id}
+                className={`live-source appearing ${cited.has(`doc:${s.id}`) ? "cited" : ""}`}
+                href={s.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={s.url}
+              >
+                <span className="live-source-kind">{s.kind}</span>
+                {s.title}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {running && causes.length > 0 && (
+        <div className="live-block">
+          <div className="answer-section">Likely causes</div>
+          {causes.map((c, i) => (
+            <div key={i} className="cause appearing">
+              <div className="cause-title">
+                {i + 1}. {c.title}
+                {c.confidence && <span className={`conf ${c.confidence}`}>{c.confidence}</span>}
+              </div>
+              {c.explanation && <div className="cause-why">{c.explanation}</div>}
+              {c.evidence?.length > 0 && (
+                <div className="evidence">
+                  <span className="evidence-label">Based on</span>
+                  {c.evidence.map((e) => {
+                    const [kind, id] = e.split(":");
+                    return (
+                      <span key={e} className="ref">
+                        {kind === "case" ? `past repair #${id}` : `source ${id}`}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {running && parts.length > 0 && (
+        <div className="live-block">
+          <div className="answer-section">What to buy</div>
+          <div className="live-parts">
+            {/* Names only. Prices and links are resolved from the stored
+                listing records in the final answer, never from a partial. */}
+            {parts.map((p, i) => (
+              <span key={i} className="live-part appearing">
+                {p.name_en}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+       </div>
+      </div>
+    </div>
+  );
+}
+
 function AnswerCard({ answer, latest = true, at }) {
   if (!answer) return null;
   const urgency = URGENCY[answer.urgency] || URGENCY[1];
@@ -312,7 +498,7 @@ function AnswerCard({ answer, latest = true, at }) {
                 <span className={`conf ${c.confidence}`}>{c.confidence}</span>
               </div>
               {c.explanation && <div className="cause-why">{c.explanation}</div>}
-              {c.evidence.length > 0 && (
+              {c.evidence.length > 0 ? (
                 <div className="evidence">
                   <span className="evidence-label">Based on</span>
                   {c.evidence.map((e) => {
@@ -323,6 +509,14 @@ function AnswerCard({ answer, latest = true, at }) {
                       </span>
                     );
                   })}
+                </div>
+              ) : (
+                // Must never be mistaken for a sourced cause. The assistant is
+                // allowed to give the textbook differential when the sources
+                // don't cover this car -- but it has to say that's what it is.
+                <div className="evidence unsourced">
+                  <span className="evidence-label">General knowledge</span>
+                  <span className="ref muted">no source found for this car</span>
                 </div>
               )}
             </div>
@@ -486,6 +680,48 @@ function buildTimeline(active) {
   return entries.sort((a, b) => new Date(a.at) - new Date(b.at) || a.rank - b.rank);
 }
 
+// A destructive confirm that belongs to the app rather than the browser.
+// Escape and a backdrop click both cancel, and the cancel button takes focus
+// on open -- so the reflex "hit enter to get rid of this" is the safe answer,
+// not the irreversible one.
+function ConfirmDialog({ title, body, confirmLabel, onConfirm, onCancel }) {
+  const cancelRef = useRef(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div
+        className="modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-title" id="confirm-title">
+          {title}
+        </div>
+        <div className="modal-body">{body}</div>
+        <div className="modal-actions">
+          <button type="button" className="modal-btn" ref={cancelRef} onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="modal-btn danger" onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 async function api(path, options) {
   const res = await fetch(path, options);
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -527,20 +763,6 @@ function PlusIcon() {
   );
 }
 
-function ClipIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M8 12l6.5-6.5a3 3 0 1 1 4.24 4.24L10 18.5a5 5 0 1 1-7.07-7.07L11.5 3"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 export default function App() {
   const [requests, setRequests] = useState([]);
   const [activeId, setActiveId] = useState(null);
@@ -549,7 +771,6 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [imageType, setImageType] = useState("vin_plate");
   // Keyed by request id rather than a single slot: switching records used to
   // wipe the run, so an open pipeline vanished and could only be brought back
   // by re-running the diagnosis. Each record now keeps its own.
@@ -557,7 +778,6 @@ export default function App() {
   // Which records have their steps expanded. Never cleared -- an open panel
   // stays open for the rest of the session, however much you click around.
   const [openSteps, setOpenSteps] = useState(() => new Set());
-  const fileRef = useRef(null);
   const messagesRef = useRef(null);
 
   const activeRun = runs[activeId] || EMPTY_RUN;
@@ -577,6 +797,25 @@ export default function App() {
       );
       return data;
     });
+
+  // Confirmed before it happens: it takes the conversation and every run with
+  // it, and there is nowhere to get them back from. Holds the whole record
+  // rather than the id, so the dialog can name the car being deleted.
+  const [pendingDelete, setPendingDelete] = useState(null);
+
+  const deleteRequest = async () => {
+    const id = pendingDelete?.id;
+    setPendingDelete(null);
+    if (!id) return;
+    await api(`/api/diagnostics/${id}/`, { method: "DELETE" });
+    setRuns((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (id === activeId) setActiveId(null);
+    await loadRequests();
+  };
 
   const toggleSteps = (id) =>
     setOpenSteps((prev) => {
@@ -717,16 +956,6 @@ export default function App() {
     }
   };
 
-  const uploadImage = async (file) => {
-    if (!file || !activeId) return;
-    const body = new FormData();
-    body.append("request", activeId);
-    body.append("image_type", imageType);
-    body.append("image", file);
-    await api("/api/diagnostic-images/", { method: "POST", body });
-    await loadActive(activeId);
-  };
-
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -763,22 +992,48 @@ export default function App() {
                   <span className="title">
                     {r.car_make} {r.car_model} {r.car_year || ""}
                   </span>
+                  {/* Labelled with what it opens, rather than an arrow.
+                      A chevron in a list of records reads as "go into this",
+                      which is what clicking the row already does, and it
+                      leaves every row looking identical at rest. The count is
+                      the useful part: it says which of these answers actually
+                      had something behind it before you open any of them. */}
                   {hasRun && (
                     <button
                       type="button"
-                      className={`req-dots ${open ? "open" : ""}`}
+                      className={`req-trace ${open ? "open" : ""}`}
                       aria-expanded={open}
-                      title={open ? "Hide the steps" : "Show the steps behind this answer"}
+                      title={open ? "Hide the research behind this answer" : "The research behind this answer"}
                       onClick={(e) => {
                         e.stopPropagation(); // the row itself only selects
                         toggleSteps(r.id);
                       }}
                     >
-                      ···
+                      {open ? "Hide" : traceLabel(rowRun.events)}
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="req-del"
+                    title="Delete this diagnosis"
+                    aria-label="Delete this diagnosis"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPendingDelete(r);
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
-                {open && <Pipeline run={rowRun} />}
+                {/* Rendered whether open or not: a height transition needs
+                    something to measure, and mounting on open would snap. */}
+                {hasRun && (
+                  <div className={`collapse ${open ? "open" : ""}`}>
+                    <div className="collapse-inner">
+                      <Pipeline run={rowRun} />
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -851,28 +1106,6 @@ export default function App() {
               </span>
               <span className={`pill ${active.status}`}>{STATUS_LABEL[active.status] || active.status}</span>
 
-              <select
-                className="attach-select"
-                value={imageType}
-                onChange={(e) => setImageType(e.target.value)}
-                title="Photo type for next upload"
-              >
-                {IMAGE_TYPES.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="file"
-                ref={fileRef}
-                accept="image/*"
-                style={{ display: "none" }}
-                onChange={(e) => uploadImage(e.target.files[0])}
-              />
-              <button className="icon-btn" title="Attach photo" onClick={() => fileRef.current?.click()}>
-                <ClipIcon />
-              </button>
               <button
                 className="primary-btn compact"
                 onClick={() => runPipeline(activeId)}
@@ -882,14 +1115,6 @@ export default function App() {
                 {activeRun.running ? "Running…" : "Run diagnosis"}
               </button>
             </div>
-
-            {active.images.length > 0 && (
-              <div className="images">
-                {active.images.map((img) => (
-                  <img key={img.id} src={img.image} title={img.image_type} alt={img.image_type} />
-                ))}
-              </div>
-            )}
 
             {active.case_matches.length > 0 && (
               <div className="match-card">
@@ -921,18 +1146,12 @@ export default function App() {
 
                 {activeRun.error && <div className="run-error">{activeRun.error}</div>}
 
-                {/* The new answer lands at the bottom when the run finishes.
-                    Until then this holds its place -- showing the previous
-                    answer here would read as a reply to the question above it. */}
-                {(sending || activeRun.running) && (
-                  <div className="answer-pending">
-                    <span className="pending-dots">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    Working out a new answer…
-                  </div>
+                {/* Shows the run as it happens, then stays as the record of
+                    where the answer came from. It must not be conditioned on
+                    `running` alone: that unmounts the whole thing the instant
+                    the answer lands, taking the sources with it. */}
+                {(sending || activeRun.running || activeRun.events.length > 0) && (
+                  <LiveAnswer run={activeRun} />
                 )}
               </div>
             </div>
@@ -966,6 +1185,25 @@ export default function App() {
           </>
         )}
       </main>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete this diagnosis?"
+          body={
+            <>
+              <strong>
+                {pendingDelete.car_make} {pendingDelete.car_model}{" "}
+                {pendingDelete.car_year || ""}
+              </strong>{" "}
+              and everything in it — the conversation, the answers, and the steps behind
+              them. This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete"
+          onConfirm={() => deleteRequest().catch((err) => console.error(err))}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

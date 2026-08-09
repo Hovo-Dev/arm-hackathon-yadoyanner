@@ -90,6 +90,11 @@ class Intent(StrEnum):
     PART_LOOKUP = "part_lookup"
     SHOP_LOOKUP = "shop_lookup"
     SAFETY_CHECK = "safety_check"
+    #: Not a question about the car -- a greeting, a thank-you, an aside.
+    #: Without this the router has only car-shaped labels to choose from, so
+    #: "hello" became a diagnosis: twenty seconds, eight sources and two model
+    #: calls spent re-researching whatever the previous turn was about.
+    SMALL_TALK = "small_talk"
 
 
 class AnswerStatus(StrEnum):
@@ -109,6 +114,12 @@ class Vehicle(BaseModel):
     model: str | None = None
     year: int | None = None
     engine_l: float | None = None
+    #: Manufacturer engine code -- "VQ30", "K24Z2", "M32". The single most
+    #: useful thing a VIN gives us: a 2004 Altima shipped with a 2.5L QR25DE
+    #: or a 3.5L VQ35DE, and those take different parts. Forum threads and
+    #: catalogues are indexed by this code, so it sharpens retrieval in a way
+    #: "2004 Altima" cannot.
+    engine_code: str | None = None
     vin: str | None = None
     #: Set by this layer from the VIN checksum. None when no VIN was given.
     vin_valid: bool | None = None
@@ -119,6 +130,8 @@ class Vehicle(BaseModel):
         bits = [str(x) for x in (self.year, self.make, self.model) if x]
         if self.engine_l:
             bits.append(f"{self.engine_l}L")
+        if self.engine_code:
+            bits.append(self.engine_code)
         return " ".join(bits) or "unknown vehicle"
 
 
@@ -227,6 +240,21 @@ class Cause(BaseModel):
     #: Ids of what supports this, as "case:C1" / "doc:D2". Never a URL.
     evidence: list[str] = Field(default_factory=list)
     confidence: str = "unclear"  # strong | moderate | weak | unclear
+    #: Where the cause comes from. "evidence" means retrieved records support
+    #: it; "standard_diagnosis" means it is the textbook differential for the
+    #: symptom, with nothing retrieved behind it.
+    #:
+    #: The field exists because requiring a citation for every cause does not
+    #: produce a careful answer, it produces no answer -- and the sources are
+    #: unavailable far more often than the design assumed. NHTSA is a US
+    #: regulator with zero models for Opel, Skoda, Lada, Peugeot or Renault, so
+    #: for much of the fleet here it can never contribute; when web search is
+    #: also down, "worn synchro or chipped first-gear teeth" is both the right
+    #: answer and unciteable. Labelling it beats withholding it.
+    #:
+    #: What keeps this honest is that it is never dressed up as sourced:
+    #: finalize caps its confidence, and the UI says so.
+    basis: str = "evidence"  # evidence | standard_diagnosis
 
 
 class Diagnosis(BaseModel):

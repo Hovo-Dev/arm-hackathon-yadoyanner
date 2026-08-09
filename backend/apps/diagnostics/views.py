@@ -17,6 +17,7 @@ from .serializers import (
     DiagnosticMessageSerializer,
     DiagnosticRequestSerializer,
 )
+from .llm import to_latin_armenian
 from .services import build_final_summary, refresh_symptom_and_matches
 
 # A clarifying question is the one outcome that isn't terminal -- the user still
@@ -204,6 +205,19 @@ class DiagnosticRunStreamView(views.APIView):
         # Created before the run row so it sorts ahead of it in the transcript.
         answer_text = (summary.get("message") or "").strip()
         if answer_text:
+            # Translated here and nowhere else. This row is the chat bubble --
+            # the only prose the owner reads -- while `summary` below keeps the
+            # English the rest of the system depends on: PastCaseStore builds
+            # Case.fix from summary["causes"][0]["title"], and a knowledge base
+            # written half in Armenian would stop matching the English symptoms
+            # it gets queried with.
+            #
+            # Narrated, because it is a model call the user is waiting on and
+            # an unexplained pause after "Done" reads as a hang.
+            replying = {"type": "step", "name": "reply"}
+            trace.append(replying)
+            yield f"data: {json.dumps(replying)}\n\n"
+            answer_text = to_latin_armenian(answer_text)
             DiagnosticMessage.objects.create(
                 request=diagnostic_request, role=MessageRole.ASSISTANT, content=answer_text
             )

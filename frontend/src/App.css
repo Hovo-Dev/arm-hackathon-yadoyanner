@@ -98,29 +98,71 @@
 }
 
 /* The only control that opens the pipeline steps. */
-.req-dots {
+/* Reads as a label, not a control, until you go near it -- so a list of
+   fifteen rows is fifteen facts rather than fifteen buttons. */
+.req-trace {
   flex: 0 0 auto;
   border: none;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 14px;
-  line-height: 1;
-  letter-spacing: 1px;
-  padding: 3px 5px 7px; /* the glyph sits high in its box -- pad it back down */
-  border-radius: 6px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border-radius: 999px;
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
 
-.req-dots:hover {
-  color: var(--fg);
+.req-item:hover .req-trace {
   background: var(--border);
+  color: var(--text);
 }
 
-.req-dots.open {
-  color: var(--accent);
+.req-trace.open {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.req-trace:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Shared disclosure arrow, used by the answer-provenance panel. */
+.chev {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  transition: transform 0.18s ease;
+}
+
+/* Hidden until the row is hovered or the button itself is focused: a delete
+   control on every row of a list is an easy misclick, and this one is not
+   undoable. */
+.req-del {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.req-item:hover .req-del,
+.req-del:focus-visible {
+  opacity: 1;
+}
+
+.req-del:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.12);
 }
 
 .dot {
@@ -512,16 +554,6 @@ textarea {
   text-overflow: ellipsis;
 }
 
-.cost-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  white-space: nowrap;
-}
-
 .stages {
   display: flex;
   flex-direction: column;
@@ -531,7 +563,7 @@ textarea {
 .stage {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
   padding: 6px 9px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -547,11 +579,27 @@ textarea {
   background: color-mix(in srgb, var(--accent) 8%, var(--bg));
 }
 
+.stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.stage-detail {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .stage-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex: 0 0 auto;
+  margin-top: 5px;
   background: var(--border);
 }
 
@@ -584,100 +632,8 @@ textarea {
   gap: 12px;
 }
 
-.detail-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.detail-row {
-  border-left: 2px solid var(--border);
-  padding-left: 8px;
-}
-
-.detail-row.done { border-left-color: var(--accent); }
-.detail-row.running { border-left-color: var(--accent); }
-.detail-row.idle { opacity: 0.45; }
-.detail-row.skipped { opacity: 0.35; }
-
-.detail-step {
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.detail-text {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 1px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.agent-tag {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-
-.agent-tag.on {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: transparent;
-  color: var(--accent);
-}
-
 /* Spacing between the revealed blocks comes from .pipeline-details' gap, so
    these carry no margin of their own. */
-.gate-card {
-  padding: 10px 12px;
-  border-radius: 9px;
-  border: 1px solid transparent;
-}
-
-.gate-card.hit {
-  background: rgba(22, 163, 74, 0.12);
-  border-color: rgba(22, 163, 74, 0.35);
-}
-
-.gate-card.miss {
-  background: rgba(217, 119, 6, 0.12);
-  border-color: rgba(217, 119, 6, 0.35);
-}
-
-.gate-verdict { font-weight: 700; font-size: 12px; }
-.gate-card.hit .gate-verdict { color: #16a34a; }
-.gate-card.miss .gate-verdict { color: #d97706; }
-.gate-detail { font-size: 11px; color: var(--muted); margin-top: 3px; }
-
-.lookups {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.lookup {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 11px;
-}
-
-.lookup .source { color: var(--fg); }
-
-.lookup .count {
-  font-weight: 600;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-}
-
-.lookup.empty .count { background: var(--sidebar-bg); color: var(--muted); }
-.stub-tag { color: var(--muted); font-style: italic; }
 
 .story {
   margin: 0;
@@ -692,35 +648,204 @@ textarea {
 
 .story li::marker { color: var(--accent); }
 
-.trace-log { font-size: 11px; }
-.trace-log summary { cursor: pointer; color: var(--muted); font-weight: 600; }
-
-.trace-log pre {
-  margin: 8px 0 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--sidebar-bg);
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-x: auto;
-  max-height: 220px;
+/* The run as it happens: what step is going, what it found, and each cause
+   the moment the model finishes writing it. Deliberately flatter than the
+   answer card -- nothing in here is verified yet. */
+/* No card. This is the assistant thinking out loud, not a separate object in
+   the transcript -- a border around it makes the reasoning look like another
+   answer competing with the real one. Spacing does the separating. */
+.live {
+  border: 0;
+  background: transparent;
+  padding: 2px 0 6px;
 }
 
-/* Stands in for the answer card while a run is in flight, so the space it
-   leaves doesn't read as "nothing came back". */
-.answer-pending {
+.live-head {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--panel);
-  color: var(--muted);
+  width: 100%;
+  padding: 6px 0;
   font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.live-title { flex: none; }
+
+/* Pushed to the right so the row reads "what it is ......... how much of it". */
+.live-summary {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+.live-chevron { color: var(--muted); }
+
+.live.open .live-chevron { transform: rotate(90deg); }
+
+/* Once the answer has landed this is a provenance record, not the main event.
+   It recedes, but it stays. */
+/* Sentence case, not shouted. It is a quiet label on the assistant's own
+   working, and small caps made it compete with the answer above it. */
+.live.settled .live-head {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.live.settled .live-head:hover {
+  color: var(--text);
+}
+
+.live-head:hover .live-chevron { color: var(--text); }
+
+/* Collapsed, the border would draw a box around a single row of text. */
+.live-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chev { transition: none; }
+}
+
+.live-story {
+  margin: 0;
+  padding: 6px 0 4px 2px;
+  list-style: none;
+}
+
+.live-story li {
+  position: relative;
+  display: flex;
+  gap: 9px;
+  padding-bottom: 11px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  animation: live-in 0.25s ease-out;
+}
+
+.live-story li:last-child { padding-bottom: 0; }
+
+/* The thread between one step and the next. Drawn from the icon's centre
+   down to the following icon, so the column reads as one sequence rather
+   than a stack of unrelated lines. */
+.live-story li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 17px;
+  bottom: 1px;
+  width: 1px;
+  background: var(--border);
+}
+
+.step-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--border);
+}
+
+.step-text { min-width: 0; }
+
+/* The newest line is the one still happening. */
+.live-story li.fresh { color: var(--text); }
+.live-story li.fresh .step-icon { color: var(--accent); }
+
+.live-story li.step-done { color: var(--text); }
+.live-story li.step-done .step-icon { color: var(--accent); }
+
+/* Separated by space, not by a rule. */
+.live-block {
+  margin-top: 10px;
+  padding-bottom: 4px;
+}
+
+.live-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 6px 2px;
+}
+
+.live-part {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  animation: live-in 0.25s ease-out;
+}
+
+.live-count {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.live-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 6px 2px;
+}
+
+/* Retrieved, and not yet standing for anything -- muted until a cause points
+   at it, so "read 6 sources" can never be mistaken for "cited 6 sources". */
+.live-source {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.live-source:hover { text-decoration: underline; }
+
+.live-source.cited {
+  color: var(--text);
+}
+
+.live-source-kind {
+  flex: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.live-source.cited .live-source-kind {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.appearing { animation: live-in 0.25s ease-out; }
+
+@keyframes live-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-story li,
+  .live-part,
+  .live-source,
+  .appearing { animation: none; }
 }
 
 .pending-dots {
@@ -952,12 +1077,6 @@ textarea {
 
 .primary-btn.compact { padding: 7px 14px; font-size: 12px; width: auto; margin: 0; }
 
-.agent-tag.saved {
-  background: var(--sidebar-bg);
-  color: var(--muted);
-  border-color: var(--border);
-}
-
 .story {
   margin: 12px 0 0;
   padding-left: 18px;
@@ -980,4 +1099,182 @@ textarea {
   font-size: 10.5px;
 }
 
-.lookup .source em { color: var(--muted); font-style: normal; font-size: 10.5px; }
+/* Deliberately plainer than a citation. A cause the sources don't cover is
+   still worth showing, but it must not borrow the look of one they do. */
+.evidence.unsourced .ref.muted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Confirm dialog
+   --------------------------------------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+  animation: modal-fade 0.14s ease-out;
+}
+
+.modal {
+  width: 100%;
+  max-width: 380px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.22);
+  animation: modal-rise 0.16s ease-out;
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 650;
+  margin-bottom: 7px;
+}
+
+.modal-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.modal-btn {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.modal-btn:hover { background: var(--border); }
+
+.modal-btn.danger {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+}
+
+.modal-btn.danger:hover { background: #b91c1c; border-color: #b91c1c; }
+
+.modal-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop, .modal { animation: none; }
+}
+
+/* Sources inside the sidebar's expanded steps. Links, not counts: "10 sources"
+   is not something the reader can check. */
+.src-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.src-head {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.src-head span { font-weight: 400; }
+
+.src {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: none;
+  min-width: 0;
+}
+
+.src:hover { color: var(--text); }
+.src:hover .src-title { text-decoration: underline; }
+
+.src-kind {
+  flex: none;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.src-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------------------
+   Collapse / expand
+   --------------------------------------------------------------------------- */
+
+/* Animates to the content's natural height, which max-height cannot do without
+   guessing a number that is either too small (content clipped) or too large
+   (the transition spends most of its time on empty space). The 0fr -> 1fr grid
+   row does it exactly. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s cubic-bezier(0.32, 0.72, 0, 1),
+              opacity 0.18s ease;
+  opacity: 0;
+}
+
+.collapse.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+/* Both are required: the child must be allowed to be shorter than its content
+   (min-height) and must hide the overflow while it is. */
+.collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapse { transition: none; }
+}
+
+/* The live panel has no card padding to sit inside, so its section headings
+   and causes align to the transcript's own left edge instead. */
+.live .answer-section { padding: 6px 0 4px 2px; }
+.live .cause { padding: 4px 0 10px 2px; }
