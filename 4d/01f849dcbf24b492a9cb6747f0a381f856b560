@@ -1,0 +1,26 @@
+README.md
+  s_7e229f38697d70::t_8b328374b859f2 1,94
+  s_7e229f38697d70::t_a4230effd8bc44 3,5,7,9,15,17,19,25,27,29,31-34,36,40,42,44-48,50,52,54-56,58,60,62-66,68,70,72,74,76-79,81,83-85,89-92,96
+  s_7e229f38697d70::t_5be6fe120d1893 13,21-22,38,87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4d01f849dcbf24b492a9cb6747f0a381f856b560",
+  "prompts": {},
+  "humans": {
+    "h_be79ed0084ca44": {
+      "author": "hovo_baghdasaryan <hovhannes.baghdasaryan@eckoh.com>"
+    }
+  },
+  "sessions": {
+    "s_7e229f38697d70": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a4a522b5-03cd-476a-bd4f-86735efe2bec",
+        "model": "default"
+      },
+      "human_author": "hovo_baghdasaryan <hovhannes.baghdasaryan@eckoh.com>"
+    }
+  }
+}
