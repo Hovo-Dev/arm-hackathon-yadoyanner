@@ -1,0 +1,46 @@
+backend/apps/diagnostics/views.py
+  s_e43ee1a95fbdad::t_d698179142e29b 20,215-225
+  s_e43ee1a95fbdad::t_f4beade1c81604 11
+adapters/armenian.py
+  s_e43ee1a95fbdad::t_e24093dc5d5ed9 253-270
+frontend/src/App.jsx
+  s_7e229f38697d70::t_d7ffeb5c9da232 913-915
+  s_7e229f38697d70::t_9017994755a75a 1099-1115
+  s_e43ee1a95fbdad::t_8fa6d898c4b5fe 1117-1121,1126-1131
+  s_7e229f38697d70::t_28a7c87a955ee2 11
+  s_7e229f38697d70::t_be40a8bf3a31ca 1152,1161-1163
+  s_e43ee1a95fbdad::t_a8bf8d3e20606c 631-639,641-647
+  s_7e229f38697d70::t_cc663a8a0d460e 1153-1160
+carmed/graph.py
+  s_e43ee1a95fbdad::t_1d2c0bfecc9be8 536-544
+backend/apps/diagnostics/llm.py
+  s_e43ee1a95fbdad::t_b6d90af320b81d 8,170-178,180-182,190-191,197-209,283-284,295-300,302-304,309-336
+  s_e43ee1a95fbdad::t_a2f32029f0e9b9 230-231,234-251,273-280
+  s_e43ee1a95fbdad::t_617a64bc6389eb 49-56
+  s_e43ee1a95fbdad::t_2e0d24d8c03395 212-229,232-233,252-272,282
+  s_e43ee1a95fbdad::t_7a8abf0110ece4 210-211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5a9a9f6aa114b6d6f9f98431870540b9300fce63",
+  "prompts": {},
+  "sessions": {
+    "s_7e229f38697d70": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a4a522b5-03cd-476a-bd4f-86735efe2bec",
+        "model": "default"
+      },
+      "human_author": "hovo_baghdasaryan <hovhannes.baghdasaryan@eckoh.com>"
+    },
+    "s_e43ee1a95fbdad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "22db6971-f846-4590-bf79-33dc0ec2748a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "hovo_baghdasaryan <hovhannes.baghdasaryan@eckoh.com>"
+    }
+  }
+}
