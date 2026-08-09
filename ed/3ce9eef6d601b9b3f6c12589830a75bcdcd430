@@ -1,0 +1,31 @@
+backend/apps/diagnostics/views.py
+  s_7e229f38697d70::t_eced6000065e9c 110-131,134-149
+  s_7e229f38697d70::t_f12d9028933ced 132-133
+frontend/src/App.css
+  s_7e229f38697d70::t_201dd1cec5de57 306-335
+frontend/src/App.jsx
+  s_7e229f38697d70::t_f75529995c04d3 1184-1207
+  s_7e229f38697d70::t_57ead9ffd49eb3 835-851
+backend/apps/diagnostics/urls.py
+  s_7e229f38697d70::t_9f348474d8c866 9,26-29
+  s_7e229f38697d70::t_01ba4c5a4c35d8 30
+frontend/vite.config.js
+  s_7e229f38697d70::t_460f88e4b8f912 13-16
+  s_7e229f38697d70::t_f5d883a10441fc 8-10,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ed3ce9eef6d601b9b3f6c12589830a75bcdcd430",
+  "prompts": {},
+  "sessions": {
+    "s_7e229f38697d70": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a4a522b5-03cd-476a-bd4f-86735efe2bec",
+        "model": "default"
+      },
+      "human_author": "hovo_baghdasaryan <hovhannes.baghdasaryan@eckoh.com>"
+    }
+  }
+}
